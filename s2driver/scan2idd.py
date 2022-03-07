@@ -50,7 +50,10 @@ def xrfSetup(pvComm, scandic):
 
 def scanStart(pvComm, scanType, x_scan):
     pvComm.setXYcenter(scanType, x_scan)
-    pvComm.openShutter()
+    pvComm.openShutter()                
+    run_str = 'run_fly' if scanType == 'Fly-XRF' else 'run_step'
+    if pvComm.pvs[run_str].pv.value == 0:
+        pvComm.pvs[run_str].pv.value = 1
 
 
 def scanFinish(pvComm):
