@@ -4,30 +4,81 @@ import epics.devices
 import time
 import os
 import functools
+from tqdm import tqdm
+
+
+### PVs
+PV_KEY = {
+    # "x_center_Act": "2idd:m40.RBV",
+    # "x_center_Rqs": "2idd:m40.VAL",
+    # "y_center_Act": "2idd:m39.RBV",
+    # "y_center_Rqs": "2idd:m39.VAL",
+    # "z_value_Act": "2idd:m36.RBV",
+    # "z_value_Rqs": "2idd:m36.VAL",
+    # "x_width_fly": "2idd:FscanH.P1WD",
+    # "y_width_fly": "2idd:Fscan1.P1WD",
+    # "x_step_fly": "2idd:FscanH.P1SI",
+    # "y_step_fly": "2idd:Fscan1.P1SI",
+    "dwell_fly": "2idd:Flyscans:Setup:DwellTime.VAL",
+    # "x_center_fly": "2idd:FscanH.P1CP",
+    # "y_center_fly": "2idd:Fscan1.P1CP",
+    # "x_center_mode_fly": "2idd:FscanH.P1AR",
+    # "y_center_mode_fly": "2idd:Fscan1.P1AR",
+    # "run_fly": "2idd:Fscan1.EXSC",
+    # "wait_fly": "2idd:FscanH.WAIT",
+    "cur_lines_fly": "2idd:Fscan1.CPT",
+    "tot_lines_fly": "2idd:Fscan1.NPTS",
+    "abort_fly": "2idd:FAbortScans.PROC",
+    # "x_width_step": "2idd:scan1.P1WD",
+    # "y_width_step": "2idd:scan2.P1WD",
+    # "x_step_step": "2idd:scan1.P1SI",
+    # "y_step_step": "2idd:scan2.P1SI",
+    "dwell_step": "2iddXMAP:PresetReal",
+    # "x_center_step": "2idd:scan1.P1CP",
+    # "y_center_step": "2idd:scan2.P1CP",
+    # "x_center_mode_step": "2idd:scan1.P1AR",
+    # "y_center_mode_step": "2idd:scan2.P1AR",
+    "cur_lines_step": "2idd:scan2.CPT",
+    "tot_lines_step": "2idd:scan2.NPTS",
+    # "run_step": "2idd:scan2.EXSC",
+    # "wait_step": "2idd:scan1.WAIT",
+    "abort_step": "2idd:AbortScans.PROC",
+    "msg1d": "2idd:Fscan1.SMSG",
+    "open_shutter": "2idd:s1:openShutter.PROC",
+    "close_shutter": "2idd:s1:closeShutter.PROC",
+    "fname_saveData": "2iddXMAP:netCDF1:FileName",
+    "filesys": "2idd:saveData_fileSystem",
+    "subdir": "2idd:saveData_subDir",
+    "next_scan": "2idd:saveData_scanNumber",
+    "basename": "2idd:saveData_baseName",
+    "det_time": "2idd:3820:ElapsedReal",
+}
+pvs = {k: epics.PV(v) for k, v in PV_KEY.items()}
 
 ### Motors
-samx = epics.Motor("FILL_IN_PV")  # example: '26idcnpi:m10.'
-samy = epics.Motor()
-samz = epics.Motor()
-samth = epics.Motor()
-fomx = epics.Motor()
-fomy = epics.Motor()
-fomz = epics.Motor()
-osax = epics.Motor()
-osay = epics.Motor()
-osaz = epics.Motor()
+samx = epics.Motor("2idd.m40")  # example: '26idcnpi:m10.'
+samy = epics.Motor("2idd.m39")
+samz = epics.Motor("2idd.m36")
+flyx = epics.Motor("2idd.FscanH")
+flyy = epics.Motor("2idd.Fscan1")
+# fomx = epics.Motor()
+# fomy = epics.Motor()
+# fomz = epics.Motor()
+# osax = epics.Motor()
+# osay = epics.Motor()
+# osaz = epics.Motor()
 
 MOVEMENT_THRESHOLD = {
-    samx: 100,
+    samx: 100,  # in um
     samy: 100,
     samz: 100,
-    samth: 5,
-    fomx: 50,
-    fomy: 50,
-    fomz: 50,
-    osax: 50,
-    osay: 50,
-    osaz: 50,
+    # samth: 5,
+    # fomx: 50,
+    # fomy: 50,
+    # fomz: 50,
+    # osax: 50,
+    # osay: 50,
+    # osaz: 50,
 }  # movements that change motor positions by greater than this threshold amount will require user confirmation to proceed
 ### Scan Records
 # Link to scan records, patched to avoid overwriting PVs (note from Tao at 26-id-c)
@@ -79,21 +130,22 @@ def mov(motor: epics.Motor, position: float):
 
     Args:
         motor (epics.Motor): motor to move
-        position (float): position (typically um) to move motor to
+        position (float): position (um or degrees) to move motor to
     """
+    position = round(position, 4)
     _check_for_huge_movement(motor=motor, target_position=position, absolute=True)
-    if motor in [fomx, fomy, samy]:  # TODO check if this is necessary here
-        epics.caput("26idcnpi:m34.STOP", 1)
-        epics.caput("26idcnpi:m35.STOP", 1)
-        epics.caput("26idcSOFT:userCalc1.SCAN", 0)
-        epics.caput("26idcSOFT:userCalc3.SCAN", 0)
+    # if motor in [fomx, fomy, samy]:  # TODO check if this is necessary here
+    #     epics.caput("26idcnpi:m34.STOP", 1)
+    #     epics.caput("26idcnpi:m35.STOP", 1)
+    #     epics.caput("26idcSOFT:userCalc1.SCAN", 0)
+    #     epics.caput("26idcSOFT:userCalc3.SCAN", 0)
 
     result = motor.move(position, wait=True)
     if result == 0:
         time.sleep(0.5)
         print(motor.DESC + " ---> " + str(motor.RBV))
-        epics.caput("26idcSOFT:userCalc1.SCAN", 6)  # TODO not sure what this is doing?
-        epics.caput("26idcSOFT:userCalc3.SCAN", 6)
+        # epics.caput("26idcSOFT:userCalc1.SCAN", 6)  # TODO not sure what this is doing?
+        # epics.caput("26idcSOFT:userCalc3.SCAN", 6)
     else:
         print("Motion failed")
 
@@ -109,23 +161,6 @@ def movr(motor: epics.Motor, delta: float):
     mov(motor=motor, position=target_position)
 
 
-def filter_in(index: int):
-    """Move a filter into the beampath
-
-    Args:
-        index (int): index of the filter. Valid options assumed to be 1, 2, 3, and 4
-
-    Raises:
-        ValueError: Invalid filter index
-    """
-    if index not in [1, 2, 3, 4]:
-        raise ValueError("Filter index must be 1, 2, 3, or 4!")
-    epics.caput(
-        f"26idc:filter:Fi{int(index)}:Set", 1
-    )  # TODO double check that 1/0 is correct here
-    time.sleep(1)
-
-
 def filter_out(index: int):
     """Move a filter into the beampath
 
@@ -137,10 +172,25 @@ def filter_out(index: int):
     """
     if index not in [1, 2, 3, 4]:
         raise ValueError("Filter index must be 1, 2, 3, or 4!")
-    epics.caput(
-        f"26idc:filter:Fi{int(index)}:Set", 0
-    )  # TODO double check that 1/0 is correct here
-    time.sleep(1)
+    epics.caput(f"2idd:s{index}:openShutter.PROC", 1, wait=True)
+
+
+def filter_in(index: int):
+    """Move a filter into the beampath
+
+    Args:
+        index (int): index of the filter. Valid options assumed to be 1, 2, 3, and 4
+
+    Raises:
+        ValueError: Invalid filter index
+    """
+    if index not in [1, 2, 3, 4]:
+        raise ValueError("Filter index must be 1, 2, 3, or 4!")
+    epics.caput(f"2idd:s{index}:closeShutter.PROC", 1, wait=True)
+
+
+def get_next_scan_number() -> int:
+    return pvs["next_scan"].value
 
 
 ### Scanning Commands
@@ -153,10 +203,9 @@ def prescan(result, *args, **kwargs) -> bool:
     Returns:
         bool: whether scan should proceed. False = scan is not started
     """
-    scannum = epics.caget(SCAN_RECORD + ":saveData_scanNumber", as_string=True)
+    scannum = get_next_scan_number()
     print("scannum is {0}".format(scannum))
     pathname = epics.caget(SCAN_RECORD + ":saveData_fullPathName", as_string=True)
-    time.sleep(1)
     return True
 
 
@@ -166,13 +215,14 @@ def postscan(*args, **kwargs):
 
 def scan_moderator(func):
     """Decorator to apply prescan and postscan routines around scan functions"""
+    SHUTTER_FILTER_INDEX = 1  # assuming shutter is in filter slot 1
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if prescan(*args, **kwargs):
-            filter_out(1)  # remove the shutter
+            filter_out(SHUTTER_FILTER_INDEX)  # remove the shutter
             result = func(*args, **kwargs)
-            filter_in(1)  # replace the shutter
+            filter_in(SHUTTER_FILTER_INDEX)  # replace the shutter
             return postscan(result, *args, **kwargs)
         else:
             raise Exception("Failed prescan check, scan will not be executed!")
@@ -180,52 +230,22 @@ def scan_moderator(func):
     return wrapper
 
 
+# def nextScanName(self):
+#         return '%s%s.mda' % (self.pvs['basename'].pv.value,
+#                              str(self.pvs['nextsc'].pv.value).zfill(4))
 def _set_dwell_time(dwelltime: float):
     """Sets detectors to count for a given detector time
 
     Args:
         dwelltime (float): detector counting time, in milliseconds
     """
-    # TODO this is all from 26idc, i expect at 2idd you only need to set the XRF and maybe ptycho camera dwell times.
-    det_trigs = [sc1.T1PV, sc1.T2PV, sc1.T3PV, sc1.T4PV]
-    if "26idc:3820:scaler1.CNT" in det_trigs:
-        epics.caput("26idc:3820:scaler1.TP", dwelltime)
-    # if ('26idcXMAP:EraseStart' in det_trigs) or ('26idbSOFT:scanH.EXSC' in det_trigs):
-    epics.caput("26idcXMAP:PresetReal", dwelltime)
-    if "26idcNEO:cam1:Acquire" in det_trigs:
-        epics.caput("26idcNEO:cam1:Acquire", 0)
-        time.sleep(0.5)
-        epics.caput("26idcNEO:cam1:AcquireTime", dwelltime)
-        epics.caput("26idcNEO:cam1:ImageMode", "Fixed")
-    if "26idcCCD:cam1:Acquire" in det_trigs:
-        epics.caput("26idcCCD:cam1:Acquire", 0)
-        time.sleep(0.5)
-        epics.caput("26idcCCD:cam1:AcquireTime", dwelltime)
-        epics.caput("26idcCCD:cam1:ImageMode", "Fixed")
-        time.sleep(0.5)
-        epics.caput("26idcCCD:cam1:Initialize", 1)
-    if "dp_pixirad_xrd75:cam1:Acquire" in det_trigs:
-        epics.caput("dp_pixirad_xrd75:cam1:AcquireTime", dwelltime)
-    # if 'dp_pilatusASD:cam1:Acquire' in det_trigs:
-    #    epics.caput("dp_pilatusASD:cam1:AcquireTime",dwelltime)
-    if "dp_pilatus4:cam1:Acquire" in det_trigs:
-        epics.caput("dp_pilatus4:cam1:AcquireTime", dwelltime)
-    if "QMPX3:cam1:Acquire" in det_trigs:
-        epics.caput("QMPX3:cam1:AcquirePeriod", dwelltime * 1000)
-        # epics.caput("QMPX3:cam1:AcquirePeriod",500)
-        # epics.caput("QMPX3:cam1:NumImages",np.round(dwelltime/0.5))
-    #    if 'S33-pilatus1:cam1:Acquire' in det_trigs:
-    #        epics.caput("S33-pilatus1:cam1:AcquireTime",dwelltime)
-    #    if 'S18_pilatus:cam1:Acquire' in det_trigs:
-    #        epics.caput("S18_pilatus:cam1:AcquireTime",dwelltime)
-    # if 'dp_pixirad_msd1:MultiAcquire' in det_trigs:
-    #     epics.caput("dp_pixirad_msd1:cam1:AcquireTime",dwelltime)
-    # if 'dp_pixirad_msd1:cam1:Acquire' in det_trigs:
-    #     epics.caput("dp_pixirad_msd1:cam1:AcquireTime",dwelltime)
-    if "dp_vortex_xrd77:mca1EraseStart" in det_trigs:
-        epics.caput("dp_vortex_xrd77:mca1.PRTM", dwelltime)
-
-    time.sleep(1)
+    dwelltime = round(dwelltime)  # nearest ms
+    epics.caput(
+        "2idd:Flyscans:Setup:DwellTime.VAL", dwelltime, wait=True
+    )  # flyscan takes dwelltime in milliseconds
+    epics.caput(
+        "2iddXMAP:PresetReal", dwelltime / 1e3, wait=True
+    )  # step scan takes dwelltime in seconds
 
 
 def _set_scanner(
@@ -246,22 +266,45 @@ def _set_scanner(
         numpts (int): number of scan points, inclusive of startpos/endpos
         absolute (bool, optional): whether startpos and endpos are relative to the current motor position (True) or absolute motor coordinates (False). Defaults to False.
     """
-    if motor in [
-        fomx,
-        fomy,
-        samy,
-    ]:  # TODO not sure which of these needs to be stopped for 2idd
-        epics.caput("26idcnpi:m34.STOP", 1)
-        epics.caput("26idcnpi:m35.STOP", 1)
+    # if motor in [
+    #     fomx,
+    #     fomy,
+    #     samy,
+    # ]:  # TODO not sure which of these needs to be stopped for 2idd
+    #     epics.caput("26idcnpi:m34.STOP", 1)
+    #     epics.caput("26idcnpi:m35.STOP", 1)
 
     scanner.P1PV = motor.NAME + ".VAL"
     if absolute:
         scanner.P1AR = 0
+        _check_for_huge_movement(motor, startpos)
     else:
         scanner.P1AR = 1
+        _check_for_huge_movement(motor, startpos + motor.VAL)
     scanner.P1SP = startpos
     scanner.P1EP = endpos
     scanner.NPTS = numpts
+
+
+def _execute_scan(scanner: epics.devices.Scan):
+    """Executes a scan. Blocks and prints a progress bar for the scan. Will unblock when scan is complete.
+
+    Args:
+        scanner (epics.devices.Scan): scanner object to track progress of
+    """
+    npts = scanner.NPTS.value
+    scannum = get_next_scan_number()
+
+    scanner.execute = 1  # start the scan
+    with tqdm(total=npts, desc=f"Scan {scannum}") as pbar:
+        while scanner.BUSY == 1:
+            pbar.n = (
+                scanner.CPT.value
+            )  # update progress bar to current number of points completed
+            pbar.display()
+            time.sleep(1)
+        pbar.n = npts  # complete the progress bar
+        pbar.display()
 
 
 @scan_moderator
@@ -292,12 +335,8 @@ def scan1d(
         absolute=absolute,
     )
     _set_dwell_time(dwelltime)
-    sc1.execute = 1
 
-    print("Scanning...")
-    time.sleep(1)
-    while sc1.BUSY == 1:
-        time.sleep(1)
+    _execute_scan(sc1)
 
 
 @scan_moderator
@@ -325,7 +364,7 @@ def scan2d(
         endpos2 (float): ending position, in um
         numpts2 (int): number of scan points, inclusive of startpos/endpos
         dwelltime (float): counting time at each point of the scan, in ms
-        absolute (bool, optional): whether startpos and endpos are relative to the current motor position (True) or absolute motor coordinates (False). Defaults to False.
+        absolute (bool, optional): whether startpos and endpos are relative to the current motor position (False) or absolute motor coordinates (True). Defaults to False (relative).
     """
     _set_scanner(
         scanner=sc1,
@@ -344,11 +383,61 @@ def scan2d(
         absolute=absolute,
     )
     _set_dwell_time(dwelltime)
-    sc2.execute = 1
-    print("Scanning...")
-    time.sleep(1)
-    while sc2.BUSY == 1:
-        time.sleep(1)
+
+    _execute_scan(sc2)
+
+
+@scan_moderator
+def flyscan2d(
+    startpos1: float,
+    endpos1: float,
+    numpts1: int,
+    startpos2: float,
+    endpos2: float,
+    numpts2: int,
+    dwelltime: float,
+    absolute: bool = False,
+):
+    """Executes a flyscan using samx and samy. At 2idd, flyscanning requires that the x scanner is in absolute coordinates and that the y scanner is in relative coordinates.
+
+    Args:
+        startpos1 (float): starting coordinate for samx, um
+        endpos1 (float): ending coordinate for samx, um
+        numpts1 (int): number of steps to break the x scan into
+        startpos2 (float): starting coordinate for samy, um
+        endpos2 (float): ending coordinate for samy, um
+        numpts2 (int): number of steps to break the y scan into
+        dwelltime (float): dwelltime (ms) per point
+        absolute (bool, optional): whether startpos and endpos are relative to the current motor position (False) or absolute motor coordinates (True). In either case the coordinates will be converted to absolute x, relative y for flyscanner. Defaults to False (relative).
+    """
+    if absolute:
+        y0 = (startpos2 + endpos2) / 2
+        mov(samy, y0)  # move such that we are centered on scan in y dimension.
+        startpos2 -= flyy.VAL
+        endpos2 -= flyy.VAL
+    else:
+        startpos1 += flyx.VAL
+        endpos1 += flyx.VAL
+
+    _set_scanner(
+        scanner=sc1,
+        motor=flyx,
+        startpos=startpos1,
+        endpos=endpos1,
+        numpts=numpts1,
+        absolute=True,
+    )  # flyx must be absolute
+    _set_scanner(
+        scanner=sc2,
+        motor=flyy,
+        startpos=startpos2,
+        endpos=endpos2,
+        numpts=numpts2,
+        absolute=False,
+    )  # flyy must be relative
+    _set_dwell_time(dwelltime)
+
+    _execute_scan(sc2)
 
 
 @scan_moderator
@@ -374,11 +463,7 @@ def timeseries(numpts: int, dwelltime: float):
     sc1.P1EP = numpts * dwelltime
     sc1.NPTS = numpts + 1
     _set_dwell_time(dwelltime=dwelltime)
-    sc1.execute = 1
-    print("Scanning...")
-    time.sleep(2)
-    while sc1.BUSY == 1:
-        time.sleep(1)
+    _execute_scan(sc1)
 
     # restore scanner parameters
     sc1.PDLY = tempsettle1
