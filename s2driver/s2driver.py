@@ -5,7 +5,8 @@ import time
 import os
 import functools
 from tqdm import tqdm
-
+import logging
+import sys
 
 ### PVs
 PV_KEY = {
@@ -93,12 +94,28 @@ for attribute in ["T1PV", "T2PV", "T3PV", "T4PV", "NPTS"]:
     setattr(sc1, attribute, epics.caget(SCAN_RECORD + ":scan1." + attribute))
     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
-LOGBOOK = os.path.join(
+### init logging
+LOGBOOK_PATH = os.path.join(
     epics.caget(SCAN_RECORD + ":saveData_fileSystem", as_string=True),
     epics.caget(SCAN_RECORD + ":saveData_subDir", as_string=True),
-    "logbook.txt",
-)  # Currently not being used, but we could imagine saving a log of commands in the user folder this way
-
+    "s2driver.log",
+)
+logger = logging.Logger("2IDD Logging", level=logging.DEBUG)
+fh = logging.FileHandler(LOGBOOK_PATH)
+sh = logging.StreamHandler(sys.stdout)
+sh.setLevel(logging.INFO)
+fh_formatter = logging.Formatter(
+    "%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%m/%d/%Y %I:%M:%S %p",
+)
+sh_formatter = logging.Formatter(
+    "%(asctime)s %(message)s",
+    datefmt="%I:%M:%S",
+)
+fh.setFormatter(fh_formatter)
+sh.setFormatter(sh_formatter)
+logger.addHandler(fh)
+logger.addHandler(sh)
 
 ### Single-Action Commands
 
@@ -120,6 +137,7 @@ def _check_for_huge_movement(motor: epics.Motor, target_position: float):
             f"You asked to move {motor} by {delta:.2f} (from {current_position} to {target_position} - is that correct? (y/n)"
         )
         if response != "y":
+            logger.debug("User aborted large movement request.")
             raise Exception(
                 "Aborted move command - user indicated the target position was input incorrectly!"
             )
@@ -143,11 +161,11 @@ def mov(motor: epics.Motor, position: float):
     result = motor.move(position, wait=True)
     if result == 0:
         time.sleep(0.5)
-        print(motor.DESC + " ---> " + str(motor.RBV))
+        logger.info("Moved %s to %.4f", motor, position)
         # epics.caput("26idcSOFT:userCalc1.SCAN", 6)  # TODO not sure what this is doing?
         # epics.caput("26idcSOFT:userCalc3.SCAN", 6)
     else:
-        print("Motion failed")
+        logger.info("Failed attempt to move %s to %.4f", motor, position)
 
 
 def movr(motor: epics.Motor, delta: float):
@@ -173,6 +191,7 @@ def filter_out(index: int):
     if index not in [1, 2, 3, 4]:
         raise ValueError("Filter index must be 1, 2, 3, or 4!")
     epics.caput(f"2idd:s{index}:openShutter.PROC", 1, wait=True)
+    logger.debug("Filter %i moved out of beam path.", index)
 
 
 def filter_in(index: int):
@@ -187,6 +206,7 @@ def filter_in(index: int):
     if index not in [1, 2, 3, 4]:
         raise ValueError("Filter index must be 1, 2, 3, or 4!")
     epics.caput(f"2idd:s{index}:closeShutter.PROC", 1, wait=True)
+    logger.debug("Filter %i moved in to beam path.", index)
 
 
 def get_next_scan_number() -> int:
@@ -225,6 +245,8 @@ def scan_moderator(func):
             filter_in(SHUTTER_FILTER_INDEX)  # replace the shutter
             return postscan(result, *args, **kwargs)
         else:
+            logger.debug("Failed prescan check")
+
             raise Exception("Failed prescan check, scan will not be executed!")
 
     return wrapper
@@ -246,6 +268,7 @@ def _set_dwell_time(dwelltime: float):
     epics.caput(
         "2iddXMAP:PresetReal", dwelltime / 1e3, wait=True
     )  # step scan takes dwelltime in seconds
+    logger.debug("Set detector dwell time to %.2f ms", dwelltime)
 
 
 def _set_scanner(
@@ -284,6 +307,14 @@ def _set_scanner(
     scanner.P1SP = startpos
     scanner.P1EP = endpos
     scanner.NPTS = numpts
+    logger.debug(
+        "Set scanner %s to scan %s from %.2f to %.2f, absolute is %i",
+        scanner,
+        motor,
+        startpos,
+        endpos,
+        absolute,
+    )
 
 
 def _execute_scan(scanner: epics.devices.Scan):
@@ -296,6 +327,7 @@ def _execute_scan(scanner: epics.devices.Scan):
     scannum = get_next_scan_number()
 
     scanner.execute = 1  # start the scan
+    logger.info("Started scan %i", scannum)
     with tqdm(total=npts, desc=f"Scan {scannum}") as pbar:
         while scanner.BUSY == 1:
             pbar.n = (
