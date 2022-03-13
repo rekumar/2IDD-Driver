@@ -1,3 +1,4 @@
+from multiprocessing.connection import wait
 from multiprocessing.sharedctypes import Value
 import epics
 import epics.devices
@@ -7,6 +8,9 @@ import functools
 from tqdm import tqdm
 import logging
 import sys
+from closedloop.websocket import Server
+import json
+from xeol.driver import XEOLDriver
 
 ### PVs
 PV_KEY = {
@@ -81,45 +85,48 @@ MOVEMENT_THRESHOLD = {
     # osay: 50,
     # osaz: 50,
 }  # movements that change motor positions by greater than this threshold amount will require user confirmation to proceed
-### Scan Records
-# Link to scan records, patched to avoid overwriting PVs (note from Tao at 26-id-c)
 
-SCAN_RECORD = "26idbSOFT"  # TODO fix. I think this is the prefix for all the file saving PV, scan PV, etc.
+SCAN_RECORD = pvs["fname_saveData"].val
 
 sc1 = epics.devices.Scan(SCAN_RECORD + ":scan1")
 time.sleep(1)
-sc2 = epics.devices.Scan(SCAN_RECORD + ":scan1")
+sc2 = epics.devices.Scan(SCAN_RECORD + ":scan2")
 time.sleep(1)
 for attribute in ["T1PV", "T2PV", "T3PV", "T4PV", "NPTS"]:
     setattr(sc1, attribute, epics.caget(SCAN_RECORD + ":scan1." + attribute))
     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
-### init logging
-LOGBOOK_PATH = os.path.join(
-    epics.caget(SCAN_RECORD + ":saveData_fileSystem", as_string=True),
-    epics.caget(SCAN_RECORD + ":saveData_subDir", as_string=True),
-    "s2driver.log",
-)
-logger = logging.Logger("2IDD Logging", level=logging.DEBUG)
-fh = logging.FileHandler(LOGBOOK_PATH)
-sh = logging.StreamHandler(sys.stdout)
-sh.setLevel(logging.INFO)
-fh_formatter = logging.Formatter(
-    "%(asctime)s %(levelname)s: %(message)s",
-    datefmt="%m/%d/%Y %I:%M:%S %p",
-)
-sh_formatter = logging.Formatter(
-    "%(asctime)s %(message)s",
-    datefmt="%I:%M:%S",
-)
-fh.setFormatter(fh_formatter)
-sh.setFormatter(sh_formatter)
-logger.addHandler(fh)
-logger.addHandler(sh)
+
+def initialize_logbook():
+    LOGBOOK_PATH = os.path.join(
+        epics.caget(SCAN_RECORD + ":saveData_fileSystem", as_string=True),
+        epics.caget(SCAN_RECORD + ":saveData_subDir", as_string=True),
+        "s2driver.log",
+    )
+    logger = logging.Logger("2IDD Logging", level=logging.DEBUG)
+    fh = logging.FileHandler(LOGBOOK_PATH)
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.INFO)
+    fh_formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s: %(message)s",
+        datefmt="%m/%d/%Y %I:%M:%S %p",
+    )
+    sh_formatter = logging.Formatter(
+        "%(asctime)s %(message)s",
+        datefmt="%I:%M:%S",
+    )
+    fh.setFormatter(fh_formatter)
+    sh.setFormatter(sh_formatter)
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+    return logger
+
+
+logger = initialize_logbook()
+xeol_driver = XEOLDriver()
+
 
 ### Single-Action Commands
-
-
 def _check_for_huge_movement(motor: epics.Motor, target_position: float):
     """Checks if the movement step requested by the user is suspiciously large
 
@@ -420,6 +427,61 @@ def scan2d(
 
 
 @scan_moderator
+def scan2d_xeol(
+    motor1: epics.Motor,
+    startpos1: float,
+    endpos1: float,
+    numpts1: int,
+    motor2: epics.Motor,
+    startpos2: float,
+    endpos2: float,
+    numpts2: int,
+    dwelltime: float,
+    absolute: bool = False,
+):
+    """Scans across two motors
+
+    Args:
+        motor1 (epics.Motor): motor to scan
+        startpos1 (float): starting position, in um
+        endpos1 (float): ending position, in um
+        numpts1 (int): number of scan points, inclusive of startpos/endpos
+        motor2 (epics.Motor): motor to scan
+        startpos2 (float): starting position, in um
+        endpos2 (float): ending position, in um
+        numpts2 (int): number of scan points, inclusive of startpos/endpos
+        dwelltime (float): counting time at each point of the scan, in ms
+        absolute (bool, optional): whether startpos and endpos are relative to the current motor position (False) or absolute motor coordinates (True). Defaults to False (relative).
+    """
+    _set_scanner(
+        scanner=sc1,
+        motor=motor1,
+        startpos=startpos1,
+        endpos=endpos1,
+        numpts=numpts1,
+        absolute=absolute,
+    )
+    _set_scanner(
+        scanner=sc2,
+        motor=motor2,
+        startpos=startpos2,
+        endpos=endpos2,
+        numpts=numpts2,
+        absolute=absolute,
+    )
+    _set_dwell_time(dwelltime)
+
+    xeol_output_filepath = os.path.join(
+        pvs["filesys"].val,
+        "XEOL",
+        f'{pvs["basename"].val}_{pvs["scan_number"].val:04d}_XEOL.h5',
+    )
+    xeol_thread = xeol_driver.prime_for_stepscan(output_filepath=xeol_output_filepath)
+    _execute_scan(sc2)
+    xeol_thread.join()  # will join when xeol data has been saved to file
+
+
+@scan_moderator
 def flyscan2d(
     startpos1: float,
     endpos1: float,
@@ -429,6 +491,7 @@ def flyscan2d(
     numpts2: int,
     dwelltime: float,
     absolute: bool = False,
+    wait_for_h5: bool = False,
 ):
     """Executes a flyscan using samx and samy. At 2idd, flyscanning requires that the x scanner is in absolute coordinates and that the y scanner is in relative coordinates.
 
@@ -469,7 +532,17 @@ def flyscan2d(
     )  # flyy must be relative
     _set_dwell_time(dwelltime)
 
+    h5_output_filepath = os.path.join(
+        pvs["filesys"].val,
+        "img.dat",
+        f'{pvs["basename"].val}_{pvs["scan_number"].val:04d}.h5',
+    )
     _execute_scan(sc2)
+
+    if wait_for_h5:
+        while not os.path.exists(h5_output_filepath):
+            time.sleep(0.1)  # wait for the file to appear (ie write has begun)
+        time.sleep(3)  # wait for file to be completely written to disk
 
 
 @scan_moderator
@@ -503,3 +576,26 @@ def timeseries(numpts: int, dwelltime: float):
     sc1.P1PV = tempdrive
     sc1.P1SP = tempstart
     sc1.P1EP = tempend
+
+
+class APSServer(Server):
+    def __init__(self):
+        return
+
+    def _process_message(self, message: str):
+        options = {
+            "request_savedir": self._send_savedir,
+            # "get_experiment_directory": self.share_experiment_directory,
+        }
+
+        d = json.loads(message)
+        func = options[d.pop("type")]
+        func(d)
+
+    def _send_savedir(self, d):
+        rootdir = pvs["filesys"].val
+        subdir = pvs["subdir"].val
+        basename = pvs["basename"].val
+        self.send_message(
+            json.dumps({"rootdir": rootdir, "subdir": subdir, "basename": basename})
+        )
