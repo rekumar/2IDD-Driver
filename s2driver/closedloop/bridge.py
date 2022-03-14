@@ -1,32 +1,15 @@
-from collections import defaultdict
-import numpy as np
 import os
 import time
 import json
-from abc import ABC, abstractmethod
-from typing import Any, Dict, NamedTuple, Union, Iterable, Set
-from threading import Thread
-import functools
 
-from ax import *
-from ax.core.base_trial import BaseTrial, TrialStatus
 from websocket import Client
 from analysis.loading import load_h5, load_xeol
-
-
-class NumpyFloatValuesEncoder(json.JSONEncoder):
-    """Converts np.float32 to float to allow dumping to json file"""
-
-    def default(self, obj):
-        if isinstance(obj, np.float32):
-            return float(obj)
-        return json.JSONEncoder.default(self, obj)
 
 
 class APSClient(Client):
     def __init__(self):
         self.scan_in_progress = False
-        return
+        super().__init__()
 
     def _process_message(self, message: str):
         options = {
@@ -161,7 +144,7 @@ class APSClient(Client):
     def load_scan(
         self,
         scan_number=None,
-        clip_flyscan=True,
+        clip_flyscan=False,
         xbic_on_dsic=False,
         quant_scaler="us_ic",
     ):
@@ -178,5 +161,5 @@ class APSClient(Client):
     def load_XEOL(self, scan_number=None):
         if scan_number is None:
             scan_number = self.most_recent_completed_scan
-        scanfid = os.path.join(self.xeoldir, f"{self.basename}_{scan_number:d}.h5")
+        scanfid = os.path.join(self.xeoldir, f"{self.basename}_{scan_number:04d}.h5")
         return load_xeol(fpath=scanfid)

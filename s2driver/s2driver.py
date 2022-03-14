@@ -319,7 +319,7 @@ def _set_scanner(
     )
 
 
-def _execute_scan(scanner: epics.devices.Scan):
+def _execute_scan(scanner: epics.devices.Scan, scantype: str):
     """Executes a scan. Blocks and prints a progress bar for the scan. Will unblock when scan is complete.
 
     Args:
@@ -329,7 +329,7 @@ def _execute_scan(scanner: epics.devices.Scan):
     scannum = get_next_scan_number()
 
     scanner.execute = 1  # start the scan
-    logger.info("Started scan %i", scannum)
+    logger.info("Started %s %i", scantype, scannum)
     with tqdm(total=npts, desc=f"Scan {scannum}") as pbar:
         while scanner.BUSY == 1:
             pbar.n = (
@@ -370,7 +370,7 @@ def scan1d(
     )
     _set_dwell_time(dwelltime)
 
-    _execute_scan(sc1)
+    _execute_scan(sc1, scantype="scan1d")
 
 
 @scan_moderator
@@ -418,7 +418,7 @@ def scan2d(
     )
     _set_dwell_time(dwelltime)
 
-    _execute_scan(sc2)
+    _execute_scan(sc2, scantype="scan2d")
 
 
 @scan_moderator
@@ -472,7 +472,7 @@ def scan2d_xeol(
         f'{pvs["basename"].val}_{pvs["scan_number"].val:04d}_XEOL.h5',
     )
     xeol_thread = xeol_driver.prime_for_stepscan(output_filepath=xeol_output_filepath)
-    _execute_scan(sc2)
+    _execute_scan(sc2, scantype="scan2d_xeol")
     xeol_thread.join()  # will join when xeol data has been saved to file
 
 
@@ -532,7 +532,7 @@ def flyscan2d(
         "img.dat",
         f'{pvs["basename"].val}_{pvs["scan_number"].val:04d}.h5',
     )
-    _execute_scan(sc2)
+    _execute_scan(sc2, scantype="flyscan2d")
 
     if wait_for_h5:
         while not os.path.exists(h5_output_filepath):
@@ -563,7 +563,7 @@ def timeseries(numpts: int, dwelltime: float):
     sc1.P1EP = numpts * dwelltime
     sc1.NPTS = numpts + 1
     _set_dwell_time(dwelltime=dwelltime)
-    _execute_scan(sc1)
+    _execute_scan(sc1, scantype="timeseries")
 
     # restore scanner parameters
     sc1.PDLY = tempsettle1
@@ -574,9 +574,6 @@ def timeseries(numpts: int, dwelltime: float):
 
 
 class APSServer(Server):
-    def __init__(self):
-        return
-
     def _process_message(self, message: str):
         options = {
             "request_savedir": self._send_savedir,
@@ -676,3 +673,6 @@ class APSServer(Server):
     def _timeseries(self, d):
         timeseries(numpts=d["numpts"], dwelltime=d["dwelltime"])
         self._mark_scan_complete()
+
+
+server = APSServer()
