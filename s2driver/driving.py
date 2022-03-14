@@ -1,12 +1,12 @@
 import epics
+import epics.devices
 import time
 import os
 import functools
 from tqdm import tqdm
-from s2driver.logging import initialize_logbook
-from s2driver.xeol.xeol import XEOLController
-
-initialize_logbook()
+from s2driver.logging import initialize_logbook, get_experiment_dir
+#from s2driver.xeol.xeol import XEOLController
+logger = initialize_logbook()
 
 ### PVs
 PV_KEY = {
@@ -57,11 +57,9 @@ PV_KEY = {
 PVS = {k: epics.PV(v) for k, v in PV_KEY.items()}
 
 ### Motors
-samx = epics.Motor("2idd.m40")  # example: '26idcnpi:m10.'
-samy = epics.Motor("2idd.m39")
-samz = epics.Motor("2idd.m36")
-flyx = epics.Motor("2idd.FscanH")
-flyy = epics.Motor("2idd.Fscan1")
+samx = epics.Motor("2idd:m40")  # example: '26idcnpi:m10.'
+samy = epics.Motor("2idd:m39")
+samz = epics.Motor("2idd:m36")
 # fomx = epics.Motor()
 # fomy = epics.Motor()
 # fomz = epics.Motor()
@@ -84,15 +82,22 @@ MOVEMENT_THRESHOLD = {
 
 ### Scanners
 sc1 = epics.devices.Scan("2idd:scan1")
-time.sleep(1)
 sc2 = epics.devices.Scan("2idd:scan2")
-time.sleep(1)
+flyh = epics.devices.Scan("2idd:FscanH")
+fly1 = epics.devices.Scan("2idd:Fscan1")
+
+CANCEL_PVS = {
+    sc1: epics.PV("2idd:AbortScans.PROC"),
+    sc2: epics.PV("2idd:AbortScans.PROC"),
+    fly1: epics.PV("2idd:FAbortScans.PROC"),
+}
 # for attribute in ["T1PV", "T2PV", "T3PV", "T4PV", "NPTS"]: #TODO not sure what this is, got it from 26idc code -- maybe unnecessary at 2idd?
 #     setattr(sc1, attribute, epics.caget(SCAN_RECORD + ":scan1." + attribute))
 #     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
 ### XEOL
-xeol_controller = XEOLController()
+#xeol_controller = XEOLController()
+xeol_controller = 0
 
 ### Single-Action Commands
 def _check_for_huge_movement(motor: epics.Motor, target_position: float):
@@ -126,7 +131,7 @@ def mov(motor: epics.Motor, position: float):
         position (float): position (um or degrees) to move motor to
     """
     position = round(position, 4)
-    _check_for_huge_movement(motor=motor, target_position=position, absolute=True)
+    _check_for_huge_movement(motor=motor, target_position=position)
     # if motor in [fomx, fomy, samy]:  # TODO check if this is necessary here
     #     epics.caput("26idcnpi:m34.STOP", 1)
     #     epics.caput("26idcnpi:m35.STOP", 1)
@@ -189,7 +194,7 @@ def get_next_scan_number() -> int:
 
 
 ### Scanning Commands
-def prescan(result, *args, **kwargs) -> bool:
+def prescan(*args, **kwargs) -> bool:
     """Checks whether a scan is valid.
 
     Args:
@@ -200,7 +205,7 @@ def prescan(result, *args, **kwargs) -> bool:
     """
     scannum = get_next_scan_number()
     print("scannum is {0}".format(scannum))
-    pathname = epics.caget(SCAN_RECORD + ":saveData_fullPathName", as_string=True)
+    pathname = epics.caget("2idd:saveData_fullPathName", as_string=True)
     return True
 
 
@@ -295,20 +300,30 @@ def _execute_scan(scanner: epics.devices.Scan, scantype: str):
     Args:
         scanner (epics.devices.Scan): scanner object to track progress of
     """
-    npts = scanner.NPTS.value
+    npts = scanner.NPTS
     scannum = get_next_scan_number()
-
-    scanner.execute = 1  # start the scan
-    logger.info("Started %s %i", scantype, scannum)
-    with tqdm(total=npts, desc=f"Scan {scannum}") as pbar:
-        while scanner.BUSY == 1:
-            pbar.n = (
-                scanner.CPT.value
-            )  # update progress bar to current number of points completed
+    try:
+        scanner.execute = 1  # start the scan
+        logger.info("Started %s %i", scantype, scannum)
+        with tqdm(total=npts, desc=f"Scan {scannum}") as pbar:
+            while scanner.BUSY == 0:
+                time.sleep(0.1) #wait for scan to begin
+            current_point = 0
+            while scanner.BUSY == 1:
+                if scanner.CPT != current_point:
+                    current_point = scanner.CPT
+                    pbar.n = (
+                        current_point
+                    )  # update progress bar to current number of points completed
+                    pbar.display()
+                time.sleep(1)
+            pbar.n = npts  # complete the progress bar
             pbar.display()
-            time.sleep(1)
-        pbar.n = npts  # complete the progress bar
-        pbar.display()
+    except KeyboardInterrupt:
+        cancel = CANCEL_PVS.get(scanner, None)
+        if cancel is not None:
+            cancel.put(1)
+        logger.info(f"Scan {scannum} canceled using ctrl-c!")
 
 
 @scan_moderator
@@ -382,7 +397,7 @@ def scan1d_xeol(
     _set_dwell_time(dwelltime)
 
     xeol_output_filepath = os.path.join(
-        PVS["filesys"].val,
+        get_experiment_dir(),
         "XEOL",
         f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
     )
@@ -492,7 +507,7 @@ def scan2d_xeol(
     _set_dwell_time(dwelltime)
 
     xeol_output_filepath = os.path.join(
-        PVS["filesys"].val,
+        get_experiment_dir(),
         "XEOL",
         f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
     )
@@ -530,23 +545,26 @@ def flyscan2d(
     if absolute:
         y0 = (startpos2 + endpos2) / 2
         mov(samy, y0)  # move such that we are centered on scan in y dimension.
-        startpos2 -= flyy.VAL
-        endpos2 -= flyy.VAL
+        startpos2 -= samy.VAL
+        endpos2 -= samy.VAL
     else:
-        startpos1 += flyx.VAL
-        endpos1 += flyx.VAL
+        startpos1 += samx.VAL
+        endpos1 += samx.VAL
+
+    _check_for_huge_movement(samx, startpos1)    
+    flyh.P1SP = startpos1
+    flyh.P1EP = endpos1
+    flyh.NPTS = numpts1
+    logger.debug(
+        "Set flyscanner %s to scan horizontally from %.2f to %.2f",
+        flyh,
+        startpos1,
+        endpos1,
+    )
 
     _set_scanner(
-        scanner=sc1,
-        motor=flyx,
-        startpos=startpos1,
-        endpos=endpos1,
-        numpts=numpts1,
-        absolute=True,
-    )  # flyx must be absolute
-    _set_scanner(
-        scanner=sc2,
-        motor=flyy,
+        scanner=fly1,
+        motor=samy,
         startpos=startpos2,
         endpos=endpos2,
         numpts=numpts2,
@@ -555,11 +573,11 @@ def flyscan2d(
     _set_dwell_time(dwelltime)
 
     h5_output_filepath = os.path.join(
-        PVS["filesys"].val,
+        get_experiment_dir(),
         "img.dat",
-        f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}.h5',
+        f'{PVS["basename"].value}_{PVS["next_scan"].value:04d}.h5',
     )
-    _execute_scan(sc2, scantype="flyscan2d")
+    _execute_scan(fly1, scantype="flyscan2d")
 
     if wait_for_h5:
         while not os.path.exists(h5_output_filepath):
@@ -587,7 +605,7 @@ def timeseries(numpts: int, dwelltime: float):
     sc1.P1PV = "26idcNES:sft01:ph01:ao03.VAL"  # TODO I think this is a timer PV? idk
     sc1.P1AR = 1
     sc1.P1SP = 0.0
-    sc1.P1EP = numpts * dwelltime
+    sc1.P1EP = numpts * dwelltime/1e3 #total time in seconds, not ms!
     sc1.NPTS = numpts + 1
     _set_dwell_time(dwelltime=dwelltime)
     _execute_scan(sc1, scantype="timeseries")
