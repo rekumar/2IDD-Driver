@@ -1,16 +1,14 @@
-from multiprocessing.connection import wait
-from multiprocessing.sharedctypes import Value
 import epics
-import epics.devices
 import time
 import os
 import functools
-from tqdm import tqdm
 import logging
 import sys
-from closedloop.websocket import Server
 import json
-from xeol.driver import XEOLDriver
+from tqdm import tqdm
+
+from s2driver.closedloop.websocket import Server
+from s2driver.xeol.driver import XEOLDriver
 
 ### PVs
 PV_KEY = {
@@ -92,9 +90,9 @@ sc1 = epics.devices.Scan(SCAN_RECORD + ":scan1")
 time.sleep(1)
 sc2 = epics.devices.Scan(SCAN_RECORD + ":scan2")
 time.sleep(1)
-for attribute in ["T1PV", "T2PV", "T3PV", "T4PV", "NPTS"]:
-    setattr(sc1, attribute, epics.caget(SCAN_RECORD + ":scan1." + attribute))
-    setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
+# for attribute in ["T1PV", "T2PV", "T3PV", "T4PV", "NPTS"]: #TODO not sure what this is, got it from 26idc code -- maybe unnecessary at 2idd?
+#     setattr(sc1, attribute, epics.caget(SCAN_RECORD + ":scan1." + attribute))
+#     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
 
 def initialize_logbook():
@@ -259,9 +257,6 @@ def scan_moderator(func):
     return wrapper
 
 
-# def nextScanName(self):
-#         return '%s%s.mda' % (self.pvs['basename'].pv.value,
-#                              str(self.pvs['nextsc'].pv.value).zfill(4))
 def _set_dwell_time(dwelltime: float):
     """Sets detectors to count for a given detector time
 
@@ -585,11 +580,18 @@ class APSServer(Server):
     def _process_message(self, message: str):
         options = {
             "request_savedir": self._send_savedir,
+            "scan1d_x": self._scan1d_x,
+            "scan1d_y": self._scan1d_y,
+            "scan2d": self._scan2d,
+            "scan2d_xeol": self._scan2d_xeol,
+            "flyscan2d": self._flyscan2d,
+            "timeseries": self._timeseries,
             # "get_experiment_directory": self.share_experiment_directory,
         }
 
         d = json.loads(message)
         func = options[d.pop("type")]
+        logger.info(f"APSServer received instructions of type '{func}'")
         func(d)
 
     def _send_savedir(self, d):
@@ -599,3 +601,78 @@ class APSServer(Server):
         self.send_message(
             json.dumps({"rootdir": rootdir, "subdir": subdir, "basename": basename})
         )
+
+    def _mark_scan_complete(self):
+        msg = {
+            "type": "scan_complete",
+        }
+        self.send(json.dumps(msg))
+
+    def _scan1d_x(self, d):
+        scan1d(
+            motor=samx,
+            startpos=d["startpos"],
+            endpos=d["endpos"],
+            numpts=d["numpts"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
+    def _scan1d_y(self, d):
+        scan1d(
+            motor=samy,
+            startpos=d["startpos"],
+            endpos=d["endpos"],
+            numpts=d["numpts"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
+    def _scan2d(self, d):
+        scan2d(
+            motor1=samx,
+            startpos1=d["startpos1"],
+            endpos1=d["endpos1"],
+            numpts1=d["numpts1"],
+            motor2=samy,
+            startpos2=d["startpos2"],
+            endpos2=d["endpos2"],
+            numpts2=d["numpts2"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
+    def _scan2d_xeol(self, d):
+        scan2d_xeol(
+            motor1=samx,
+            startpos1=d["startpos1"],
+            endpos1=d["endpos1"],
+            numpts1=d["numpts1"],
+            motor2=samy,
+            startpos2=d["startpos2"],
+            endpos2=d["endpos2"],
+            numpts2=d["numpts2"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
+    def _flyscan2d(self, d):
+        flyscan2d(
+            startpos1=d["startpos1"],
+            endpos1=d["endpos1"],
+            numpts1=d["numpts1"],
+            startpos2=d["startpos2"],
+            endpos2=d["endpos2"],
+            numpts2=d["numpts2"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
+    def _timeseries(self, d):
+        timeseries(numpts=d["numpts"], dwelltime=d["dwelltime"])
+        self._mark_scan_complete()

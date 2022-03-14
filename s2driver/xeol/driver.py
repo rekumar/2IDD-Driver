@@ -1,11 +1,10 @@
 from spectrometer import Stellarnet
-import h5py
 import numpy as np
 import time
 import epics
 from threading import Thread
-from queue import Queue
 from tqdm import tqdm
+from s2driver.analysis.helpers import save_dict_to_hdf5
 
 XRF_DETECTOR_TRIGGER = (
     4  # index of scan trigger that is used to trigger the XRF detector
@@ -17,9 +16,15 @@ class XEOLDriver:
         self.spectrometer = Stellarnet()
         self.DWELLTIME_RATIO = 0.9  # fraction of XRF collection dwelltime to use to acquire spectra. Should be <1 to avoid missing the transition from point to point while XRF scan is ongoing
 
-    def __det_trig_check(self):
+    ### scanning
+    def __xrf_detector_is_acquiring(self) -> bool:
+        """Check to see if the XRF detector is currently acquiring data
+
+        Returns:
+            bool: True = xrf detector is triggered, False = xrf detector is not acquiring data
+        """
         det_trig = epics.caget(f"2idd:scan1.T{XRF_DETECTOR_TRIGGER}PV")
-        return det_trig
+        return det_trig == 0
 
     def prime_for_stepscan(self, output_filepath: str) -> Thread:
         stepscan_dwelltime = epics.caget(
@@ -39,7 +44,7 @@ class XEOLDriver:
     def _capture_alongside_stepscan(self, numx: int, numy: int, output_filepath: str):
         """
         captures a spectrum from the usb spectrometer alongside the step scan
-        returns raw wavelength + counts read from spectrometer
+        saves raw wavelength + counts read from spectrometer to h5 file
         """
         bg_wl, bg_cts, bg_tot_time = self.capture_raw()
         numwl = len(bg_wl)
@@ -59,33 +64,20 @@ class XEOLDriver:
             time_data = np.zeros([numx, numy])
 
             # demo
-            while y_point < numy:
+            for y_point in range(numy):
                 # scanning a row
-                x_point = 0
+                for x_point in range(numx):
+                    while (
+                        x_point < numx
+                    ):  # this ensures that the data is constructed per pixel/per line
+                        wl, cts, tot_time = self.capture_raw()
+                        time_data[x_point, y_point] = tot_time
+                        data[x_point, y_point] = cts
 
-                while (
-                    x_point < numx
-                ):  # this ensures that the data is constructed per pixel/per line
-
-                    #         wl, cts, time = capture_raw() # no need to save the wl every time, it will be saved once and saved in differnt area
-                    #         data[x_point, y_point, :] = cts # acquires a spectra, with settings defined elsewhere, will also output the measured time to run
-                    #         time_data[x_point, y_point] = time #insert actual measured times here
-
-                    # time_data[x_point, y_point] = np.round(np.random.rand(1)[0]*100,0) # random numbers instead of measured spec times
-                    wl, cts, tot_time = self.capture_raw()
-
-                    #                 time_data[x_point, y_point] = np.round(np.random.rand(1)[0]*100,0) # random numbers instead of measured spec times
-                    time_data[x_point, y_point] = tot_time
-                    data[x_point, y_point] = cts
-
-                    det_trigger_check = 0
-                    while det_trigger_check == 0:
-                        det_trigger_check = self.__det_trig_check()
-
-                    x_point += (
-                        1  # move to next column, wait for next step to have started
-                    )
-                y_point += 1  # move to next row, also wait until next row is started
+                        while self.__xrf_detector_is_acquiring():
+                            time.sleep(
+                                1e-6
+                            )  # wait for xrf detector to stop acquiring data, move on to next point
 
             data_dict = {
                 "wavelength": wl,
@@ -94,11 +86,5 @@ class XEOLDriver:
                 "background": bg_cts,
             }
 
-            # scan_number = epics.caget("2idd:saveData_scanNumber")
-            # scan_name = f"scan{scan_number-1}_XEOL.h5"
-            # folderpath = "/mnt/micdata1/2idd/2021-3/Fenning/XEOL/"
-
-            # filepath = str(folderpath + scan_name)
-            self.save_dict_to_hdf5(data_dict, output_filepath)
-            tqdm.write("XEOL Loop Completed!")
+            save_dict_to_hdf5(data_dict, output_filepath)
             tqdm.write("XEOL Scan Saved to: " + output_filepath)

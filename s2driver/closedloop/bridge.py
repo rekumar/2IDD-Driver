@@ -5,6 +5,8 @@ import time
 import json
 from abc import ABC, abstractmethod
 from typing import Any, Dict, NamedTuple, Union, Iterable, Set
+from threading import Thread
+import functools
 
 from ax import *
 from ax.core.base_trial import BaseTrial, TrialStatus
@@ -51,12 +53,47 @@ class APSClient(Client):
         self.xeoldir = os.path.join(d["rootdir"], "XEOL")
         self.basename = d["basename"]
 
+    def _wait_for_scan_complete(self):
+        self.scan_in_progress = True
+        while self.scan_in_progress:
+            time.sleep(1)
+
     # scan methods
-    def scan(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
+    def scan1d_x(self, startpos, endpos, numpts, dwelltime, block=True):
         self.send(
             json.dumps(
                 {
-                    "type": "scan",
+                    "type": "scan1d_x",
+                    "startpos": startpos,
+                    "endpos": endpos,
+                    "numpts": numpts,
+                    "dwelltime": dwelltime,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def scan1d_y(self, startpos, endpos, numpts, dwelltime, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "scan1d_y",
+                    "startpos": startpos,
+                    "endpos": endpos,
+                    "numpts": numpts,
+                    "dwelltime": dwelltime,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def scan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "scan2d",
                     "xmin": xmin,
                     "xmax": xmax,
                     "numx": numx,
@@ -67,15 +104,14 @@ class APSClient(Client):
                 }
             )
         )
-        self.scan_in_progress = True
-        while self.scan_in_progress:
-            time.sleep(1)
+        if block:
+            self._wait_for_scan_complete()
 
-    def flyscan(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime):
+    def scan2d_xeol(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
         self.send(
             json.dumps(
                 {
-                    "type": "scan",
+                    "type": "scan2d_xeol",
                     "xmin": xmin,
                     "xmax": xmax,
                     "numx": numx,
@@ -86,11 +122,29 @@ class APSClient(Client):
                 }
             )
         )
-        self.scan_in_progress = True
-        while self.scan_in_progress:
-            time.sleep(1)
+        if block:
+            self._wait_for_scan_complete()
 
-    def timeseries(self, numpts, dwelltime):
+    def flyscan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "flyscan2d",
+                    "xmin": xmin,
+                    "xmax": xmax,
+                    "numx": numx,
+                    "ymin": ymin,
+                    "ymax": ymax,
+                    "numy": numy,
+                    "dwelltime": dwelltime,
+                    "wait_for_h5": True,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def timeseries(self, numpts, dwelltime, block=True):
         self.send(
             json.dumps(
                 {
@@ -100,9 +154,8 @@ class APSClient(Client):
                 }
             )
         )
-        self.scan_in_progress = True
-        while self.scan_in_progress:
-            time.sleep(1)
+        if block:
+            self._wait_for_scan_complete()
 
     ### Methods to process data
     def load_scan(
