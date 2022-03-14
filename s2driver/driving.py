@@ -603,32 +603,20 @@ def flyscan2d(
 
 @scan_moderator
 def timeseries(numpts: int, dwelltime: float):
-    """Record data with constant beam exposure at a single point
+    """Record data with constant beam exposure at a single point. This is currently done by a scan1d over samx with a relative move of 0 lol.
 
     Args:
         numpts (int): number of scans to record
         dwelltime (float): duration (ms) to expose each scan
     """
-    # store the current scanner parameters
-    tempsettle1 = sc1.PDLY
-    tempsettle2 = sc1.DDLY
-    tempdrive = sc1.P1PV
-    tempstart = sc1.P1SP
-    tempend = sc1.P1EP
+    _set_scanner(
+        scanner=sc1,
+        motor=samx,
+        startpos=0,
+        endpos=0,
+        numpts=numpts,
+        absolute=False,
+    )
+    _set_dwell_time(dwelltime)
 
-    sc1.PDLY = 0.0
-    sc1.DDLY = 0.0
-    sc1.P1PV = "26idcNES:sft01:ph01:ao03.VAL"  # TODO I think this is a timer PV? idk
-    sc1.P1AR = 1
-    sc1.P1SP = 0.0
-    sc1.P1EP = numpts * dwelltime / 1e3  # total time in seconds, not ms!
-    sc1.NPTS = numpts + 1
-    _set_dwell_time(dwelltime=dwelltime)
     _execute_scan(sc1, scantype="timeseries")
-
-    # restore scanner parameters
-    sc1.PDLY = tempsettle1
-    sc1.DDLY = tempsettle2
-    sc1.P1PV = tempdrive
-    sc1.P1SP = tempstart
-    sc1.P1EP = tempend
