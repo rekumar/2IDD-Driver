@@ -2,12 +2,12 @@ import os
 import time
 import json
 
-from websocket import Client, Server
+from s2driver.closedloop.websocket import Client, Server
 from s2driver.analysis.loading import load_h5, load_xeol
 from s2driver.driving import *  # all driving commands, used by S2Server
-from s2driver.logging import get_logbook
+from s2driver.logging import initialize_logbook
 
-logger = get_logbook()
+logger = initialize_logbook()
 
 
 class S2Client(Client):
@@ -46,7 +46,7 @@ class S2Client(Client):
             time.sleep(1)
 
     # scan methods
-    def scan1d_x(self, startpos, endpos, numpts, dwelltime, block=True):
+    def scan1d_x(self, startpos, endpos, numpts, dwelltime, absolute=False, block=True):
         self.send(
             json.dumps(
                 {
@@ -55,13 +55,14 @@ class S2Client(Client):
                     "endpos": endpos,
                     "numpts": numpts,
                     "dwelltime": dwelltime,
+                    "absolute": absolute,
                 }
             )
         )
         if block:
             self._wait_for_scan_complete()
 
-    def scan1d_y(self, startpos, endpos, numpts, dwelltime, block=True):
+    def scan1d_y(self, startpos, endpos, numpts, dwelltime, absolute=False, block=True):
         self.send(
             json.dumps(
                 {
@@ -70,13 +71,14 @@ class S2Client(Client):
                     "endpos": endpos,
                     "numpts": numpts,
                     "dwelltime": dwelltime,
+                    "absolute": absolute
                 }
             )
         )
         if block:
             self._wait_for_scan_complete()
 
-    def scan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
+    def scan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True):
         self.send(
             json.dumps(
                 {
@@ -88,13 +90,14 @@ class S2Client(Client):
                     "ymax": ymax,
                     "numy": numy,
                     "dwelltime": dwelltime,
+                    "absolute": absolute,
                 }
             )
         )
         if block:
             self._wait_for_scan_complete()
 
-    def scan2d_xeol(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
+    def scan2d_xeol(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True):
         self.send(
             json.dumps(
                 {
@@ -106,13 +109,14 @@ class S2Client(Client):
                     "ymax": ymax,
                     "numy": numy,
                     "dwelltime": dwelltime,
+                    "absolute": absolute,
                 }
             )
         )
         if block:
             self._wait_for_scan_complete()
 
-    def flyscan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, block=True):
+    def flyscan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True):
         self.send(
             json.dumps(
                 {
@@ -124,6 +128,7 @@ class S2Client(Client):
                     "ymax": ymax,
                     "numy": numy,
                     "dwelltime": dwelltime,
+                    "absolute": absolute,
                     "wait_for_h5": True,
                 }
             )
@@ -198,6 +203,7 @@ class S2Server(Server):
     def _mark_scan_complete(self):
         msg = {
             "type": "scan_complete",
+            "scan_number": PVS["next_scan"].value-1
         }
         self.send(json.dumps(msg))
 

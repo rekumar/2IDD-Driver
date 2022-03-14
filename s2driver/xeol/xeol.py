@@ -1,4 +1,4 @@
-from spectrometer import Stellarnet
+from s2driver.xeol.spectrometer import Stellarnet
 import numpy as np
 import time
 import epics
@@ -28,7 +28,7 @@ class XEOLController:
         Returns:
             bool: True = xrf detector is triggered, False = xrf detector is not acquiring data
         """
-        det_trig = epics.caget(f"2idd:scan1.T{XRF_DETECTOR_TRIGGER}PV")
+        det_trig = epics.caget(f"2idd:scan1.T{XRF_DETECTOR_TRIGGER}CD")
         return det_trig == 0
 
     def prime_for_stepscan(self, output_filepath: str) -> Thread:

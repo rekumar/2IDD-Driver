@@ -5,7 +5,8 @@ import os
 import functools
 from tqdm import tqdm
 from s2driver.logging import initialize_logbook, get_experiment_dir
-#from s2driver.xeol.xeol import XEOLController
+
+# from s2driver.xeol.xeol import XEOLController
 logger = initialize_logbook()
 
 ### PVs
@@ -96,7 +97,7 @@ CANCEL_PVS = {
 #     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
 ### XEOL
-#xeol_controller = XEOLController()
+# xeol_controller = XEOLController()
 xeol_controller = 0
 
 ### Single-Action Commands
@@ -307,14 +308,12 @@ def _execute_scan(scanner: epics.devices.Scan, scantype: str):
         logger.info("Started %s %i", scantype, scannum)
         with tqdm(total=npts, desc=f"Scan {scannum}") as pbar:
             while scanner.BUSY == 0:
-                time.sleep(0.1) #wait for scan to begin
+                time.sleep(0.1)  # wait for scan to begin
             current_point = 0
             while scanner.BUSY == 1:
                 if scanner.CPT != current_point:
                     current_point = scanner.CPT
-                    pbar.n = (
-                        current_point
-                    )  # update progress bar to current number of points completed
+                    pbar.n = current_point  # update progress bar to current number of points completed
                     pbar.display()
                 time.sleep(1)
             pbar.n = npts  # complete the progress bar
@@ -551,7 +550,7 @@ def flyscan2d(
         startpos1 += samx.VAL
         endpos1 += samx.VAL
 
-    _check_for_huge_movement(samx, startpos1)    
+    _check_for_huge_movement(samx, startpos1)
     flyh.P1SP = startpos1
     flyh.P1EP = endpos1
     flyh.NPTS = numpts1
@@ -605,7 +604,7 @@ def timeseries(numpts: int, dwelltime: float):
     sc1.P1PV = "26idcNES:sft01:ph01:ao03.VAL"  # TODO I think this is a timer PV? idk
     sc1.P1AR = 1
     sc1.P1SP = 0.0
-    sc1.P1EP = numpts * dwelltime/1e3 #total time in seconds, not ms!
+    sc1.P1EP = numpts * dwelltime / 1e3  # total time in seconds, not ms!
     sc1.NPTS = numpts + 1
     _set_dwell_time(dwelltime=dwelltime)
     _execute_scan(sc1, scantype="timeseries")

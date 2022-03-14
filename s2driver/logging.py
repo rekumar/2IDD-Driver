@@ -3,11 +3,16 @@ import logging
 import os
 import sys
 
+def get_experiment_dir():
+	path = "/mnt"+os.path.join(
+        epics.caget("2idd:saveData_fileSystem", as_string=True).replace("micdata/data1", "micdata1"),
+        epics.caget("2idd:saveData_subDir", as_string=True).split("/")[0],
+)
+	return path
 
 def initialize_logbook():
     LOGBOOK_PATH = os.path.join(
-        epics.caget("2idd:saveData_fileSystem", as_string=True),
-        epics.caget("2idd:saveData_subDir", as_string=True),
+        get_experiment_dir(),
         "s2driver.log",
     )
     logger = logging.Logger("s2driver Logging", level=logging.DEBUG)

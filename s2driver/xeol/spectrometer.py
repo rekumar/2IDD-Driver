@@ -4,11 +4,13 @@ import h5py
 import os
 import epics
 import epics.devices
-
+import sys
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import time
 
+
+sys.path.append(os.path.dirname(__file__))
 import stellarnet_driver3 as sn  # usb driver
 
 # you cant import stellarnet unless you are in the right directory regardless of env

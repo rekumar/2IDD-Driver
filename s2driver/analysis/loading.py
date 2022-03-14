@@ -1,8 +1,10 @@
 import h5py
 import numpy as np
+from s2driver.logging import get_experiment_dir
+from s2driver.driving import PVS
+import os
 
-
-def load_h5(fpath, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us_ic"):
+def load_h5(scan_number, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us_ic"):
     """
     Loads a MAPS-generated .h5 file (raw + fitted data from 2IDD, fitted from 26IDC)
 
@@ -13,7 +15,11 @@ def load_h5(fpath, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us_ic"):
 
     returns a dictionary with scan info and maps.
     """
-
+    fpath = os.path.join(
+        get_experiment_dir(),
+        "img.dat",
+        f'2idd_{scan_number:04d}.h5',
+    )
     quant_scaler_key = {
         "sr_current": 0,  # storage ring current
         "us_ic": 1,  # upstream ion chamber (incident flux)
@@ -93,7 +99,12 @@ def load_h5(fpath, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us_ic"):
     return output
 
 
-def load_xeol(fpath):
+def load_xeol(scan_number):
+    fpath = os.path.join(
+        get_experiment_dir(),
+        "XEOL",
+        f'2idd_{scan_number:04d}_XEOL.h5',
+    )
     output = {}
     with h5py.File(fpath, "r") as dat:
         wl = dat["wavelength"][()]
