@@ -160,7 +160,19 @@ def movr(motor: epics.Motor, delta: float):
     mov(motor=motor, position=target_position)
 
 
-def filter_out(index: int):
+def close_shutter():
+    """Move shutter into the beampath"""
+    epics.caput(f"2idd:s1:closeShutter.PROC", 1, wait=True)
+    logger.debug("Shutter inserted into the beam path.")
+
+
+def open_shutter():
+    """Move shutter out of the beam path"""
+    epics.caput(f"2idd:s1:openShutter.PROC", 1, wait=True)
+    logger.debug("Shutter removed from the beam path.")
+
+
+def insert_filter(index: int):
     """Move a filter into the beampath
 
     Args:
@@ -171,23 +183,29 @@ def filter_out(index: int):
     """
     if index not in [1, 2, 3, 4]:
         raise ValueError("Filter index must be 1, 2, 3, or 4!")
-    epics.caput(f"2idd:s{index}:openShutter.PROC", 1, wait=True)
+    epics.caput("2idd:s1:sendCommand", f"I{index}", wait=True)
+    logger.debug("Filter %i moved in to beam path.", index)
+
+
+def remove_filter(index: int):
+    """Move a filter out of the beampath
+
+    Args:
+        index (int): index of the filter. Valid options assumed to be 1, 2, 3, and 4
+
+    Raises:
+        ValueError: Invalid filter index
+    """
+    if index not in [1, 2, 3, 4]:
+        raise ValueError("Filter index must be 1, 2, 3, or 4!")
+    epics.caput("2idd:s1:sendCommand", f"R{index}", wait=True)
     logger.debug("Filter %i moved out of beam path.", index)
 
 
-def filter_in(index: int):
-    """Move a filter into the beampath
-
-    Args:
-        index (int): index of the filter. Valid options assumed to be 1, 2, 3, and 4
-
-    Raises:
-        ValueError: Invalid filter index
-    """
-    if index not in [1, 2, 3, 4]:
-        raise ValueError("Filter index must be 1, 2, 3, or 4!")
-    epics.caput(f"2idd:s{index}:closeShutter.PROC", 1, wait=True)
-    logger.debug("Filter %i moved in to beam path.", index)
+def remove_all_filters():
+    """Move all filters out of the beam path"""
+    for i in [1, 2, 3, 4]:
+        remove_filter(i)
 
 
 def get_next_scan_number() -> int:
@@ -216,14 +234,13 @@ def postscan(*args, **kwargs):
 
 def scan_moderator(func):
     """Decorator to apply prescan and postscan routines around scan functions"""
-    SHUTTER_FILTER_INDEX = 1  # assuming shutter is in filter slot 1
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if prescan(*args, **kwargs):
-            filter_out(SHUTTER_FILTER_INDEX)  # remove the shutter
+            open_shutter()  # remove the shutter
             result = func(*args, **kwargs)
-            filter_in(SHUTTER_FILTER_INDEX)  # replace the shutter
+            close_shutter()  # replace the shutter
             return postscan(result, *args, **kwargs)
         else:
             logger.debug("Failed prescan check")
