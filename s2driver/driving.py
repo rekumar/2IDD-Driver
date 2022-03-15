@@ -101,6 +101,10 @@ CANCEL_PVS = {
 xeol_controller = XEOLController()
 # xeol_controller = 0
 
+### Filters
+_FILTER_TRANSMITTANCES = [0.1, 0.2, 0.3, 0.4]
+for 
+
 ### Single-Action Commands
 def _check_for_huge_movement(motor: epics.Motor, target_position: float):
     """Checks if the movement step requested by the user is suspiciously large
