@@ -5,4 +5,3 @@ from s2driver.logging import initialize_logbook
 
 logger = initialize_logbook()
 server = S2Server()
-xeol_controller = XEOLController()

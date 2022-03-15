@@ -6,7 +6,8 @@ import functools
 from tqdm import tqdm
 from s2driver.logging import initialize_logbook, get_experiment_dir
 
-# from s2driver.xeol.xeol import XEOLController
+from s2driver.xeol.xeol import XEOLController
+
 logger = initialize_logbook()
 
 ### PVs
@@ -97,8 +98,8 @@ CANCEL_PVS = {
 #     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
 ### XEOL
-# xeol_controller = XEOLController()
-xeol_controller = 0
+xeol_controller = XEOLController()
+# xeol_controller = 0
 
 ### Single-Action Commands
 def _check_for_huge_movement(motor: epics.Motor, target_position: float):
