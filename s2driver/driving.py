@@ -418,7 +418,7 @@ def scan1d_xeol(
         f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
     )
     xeol_thread = xeol_controller.prime_for_stepscan(
-        output_filepath=xeol_output_filepath
+        scantype="scan1d", output_filepath=xeol_output_filepath
     )
     _execute_scan(sc1, scantype="scan1d_xeol")
     xeol_thread.join()  # will join when xeol data has been saved to file
@@ -528,7 +528,7 @@ def scan2d_xeol(
         f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
     )
     xeol_thread = xeol_controller.prime_for_stepscan(
-        output_filepath=xeol_output_filepath
+        scantype="scan2d", output_filepath=xeol_output_filepath
     )
     _execute_scan(sc2, scantype="scan2d_xeol")
     xeol_thread.join()  # will join when xeol data has been saved to file
@@ -620,3 +620,33 @@ def timeseries(numpts: int, dwelltime: float):
     _set_dwell_time(dwelltime)
 
     _execute_scan(sc1, scantype="timeseries")
+
+
+@scan_moderator
+def timeseries_xeol(numpts: int, dwelltime: float):
+    """Record data with constant beam exposure at a single point. This is currently done by a scan1d over samx with a relative move of 0 lol.
+
+    Args:
+        numpts (int): number of scans to record
+        dwelltime (float): duration (ms) to expose each scan
+    """
+    _set_scanner(
+        scanner=sc1,
+        motor=samx,
+        startpos=0,
+        endpos=0,
+        numpts=numpts,
+        absolute=False,
+    )
+    _set_dwell_time(dwelltime)
+
+    xeol_output_filepath = os.path.join(
+        get_experiment_dir(),
+        "XEOL",
+        f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
+    )
+    xeol_thread = xeol_controller.prime_for_stepscan(
+        scantype="timeseries", output_filepath=xeol_output_filepath
+    )
+    _execute_scan(sc1, scantype="timeseries_xeol")
+    xeol_thread.join()  # will join when xeol data has been saved to file
