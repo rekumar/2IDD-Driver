@@ -26,7 +26,7 @@ class Stellarnet:
         )
 
         print("Connected to spectrometer")
-        self.dwelltime = self._hdr_times[0]  # ms
+        self.dwelltime = 100 # ms
         self.numscans = 1  # one scan per spectrum
         self.smooth = 0  # smoothing factor, units unclear
 
@@ -93,7 +93,7 @@ class Stellarnet:
 
     @dwelltime.setter
     def dwelltime(self, t):
-        self.id["device"].set_config(int_time=t)
+        self.id["device"].set_config(int_time=int(t))
         time.sleep(self.SETTING_DELAY)
         self.__integrationtime = t
 

@@ -103,7 +103,7 @@ xeol_controller = XEOLController()
 
 ### Filters
 _FILTER_TRANSMITTANCES = [0.1, 0.2, 0.3, 0.4]
-for 
+#for 
 
 ### Single-Action Commands
 def _check_for_huge_movement(motor: epics.Motor, target_position: float):
@@ -422,7 +422,7 @@ def scan1d_xeol(
         "XEOL",
         f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
     )
-    xeol_thread = xeol_controller.prime_for_stepscan(
+    xeol_thread = xeol_controller.prime_for_scan(
         scantype="scan1d", output_filepath=xeol_output_filepath
     )
     _execute_scan(sc1, scantype="scan1d_xeol")
@@ -530,9 +530,9 @@ def scan2d_xeol(
     xeol_output_filepath = os.path.join(
         get_experiment_dir(),
         "XEOL",
-        f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
+        f'{PVS["basename"].value}_{PVS["next_scan"].value:04d}_XEOL.h5',
     )
-    xeol_thread = xeol_controller.prime_for_stepscan(
+    xeol_thread = xeol_controller.prime_for_scan(
         scantype="scan2d", output_filepath=xeol_output_filepath
     )
     _execute_scan(sc2, scantype="scan2d_xeol")
@@ -650,7 +650,7 @@ def timeseries_xeol(numpts: int, dwelltime: float):
         "XEOL",
         f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
     )
-    xeol_thread = xeol_controller.prime_for_stepscan(
+    xeol_thread = xeol_controller.prime_for_scan(
         scantype="timeseries", output_filepath=xeol_output_filepath
     )
     _execute_scan(sc1, scantype="timeseries_xeol")

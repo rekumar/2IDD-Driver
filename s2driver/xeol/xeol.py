@@ -6,7 +6,10 @@ import epics
 from threading import Thread
 from tqdm import tqdm
 from s2driver.analysis.helpers import save_dict_to_hdf5
-from s2driver.driving import sc1, sc2
+import epics.devices
+
+sc1 = epics.devices.Scan("2idd:scan1")
+sc2 = epics.devices.Scan("2idd:scan2")
 
 XRF_DETECTOR_TRIGGER = (
     4  # index of scan trigger that is used to trigger the XRF detector
@@ -38,7 +41,7 @@ class XEOLController:
         return det_trig == 0
 
     def prime_for_scan(self, scantype:str, output_filepath: str) -> Thread:
-        if scantype not in self.XEOL_IMPLEMENTATED_SCANTYPES:
+        if scantype not in self.XEOL_IMPLEMENTED_SCANTYPES:
             raise ValueError(f"Invalid scan type - XEOL is only implemented for {XEOL_IMPLEMENTATED_SCANTYPES.keys()}")
         capture_function = self.XEOL_IMPLEMENTED_SCANTYPES[scantype] #get the capture thread appropriate to this scan type
 
@@ -69,7 +72,7 @@ class XEOLController:
         numy = sc2.NPTS
         numwl = len(background_counts)
         tqdm.write("XEOL capture thread started, waiting for 2d stepscan to begin")
-        while epics.caget(sc2.EXSC) == 0:
+        while sc2.BUSY == 0:
             time.sleep(5e-3)
             # print('waiting for trigger...')
         tqdm.write("XEOL collection started!")
@@ -84,8 +87,8 @@ class XEOLController:
                 wl, cts, tot_time = self.spectrometer.capture_raw()
                 time_data[y_point, x_point] = tot_time
                 data[y_point, x_point] = cts
-                x_coords[y_point, x_point] = sc1.PV
-                y_coords[y_point, x_point] = sc2.PV
+                x_coords[y_point, x_point] = epics.caget(sc1.P1PV)
+                y_coords[y_point, x_point] = epics.caget(sc2.P1PV)
 
                 while self.__xrf_detector_is_acquiring():
                     time.sleep(
@@ -112,7 +115,7 @@ class XEOLController:
         numpts = sc1.NPTS
         numwl = len(background_counts)
         tqdm.write("XEOL capture thread started, waiting for stepscan to begin")
-        while epics.caget(sc2.EXSC) == 0:
+        while sc1.BUSY == 0:
             time.sleep(5e-3)
             # print('waiting for trigger...')
 
@@ -126,7 +129,7 @@ class XEOLController:
             wl, cts, tot_time = self.spectrometer.capture_raw()
             time_data[point] = tot_time
             data[point] = cts
-            coords[point] = sc1.PV
+            coords[point] = epics.caget(sc1.P1PV)
 
             while self.__xrf_detector_is_acquiring():
                 time.sleep(
