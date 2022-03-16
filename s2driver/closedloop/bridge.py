@@ -5,7 +5,7 @@ import json
 from s2driver.closedloop.websocket import Client, Server
 from s2driver.analysis.loading import load_h5, load_xeol
 from s2driver.driving import *  # all driving commands, used by S2Server
-from s2driver.logging import initialize_logbook
+from s2driver.logging import initialize_logbook, get_experiment_dir
 
 logger = initialize_logbook()
 
@@ -250,7 +250,9 @@ class S2Client(Client):
     ):
         if scan_number is None:
             scan_number = self.most_recent_completed_scan
-        scanfid = os.path.join(self.xrfdir, f"{self.basename}_{scan_number:04d}.h5")
+        scanfid = os.path.join(
+            get_experiment_dir(), "img.dat", f"2idd_{scan_number:04d}.h5"
+        )
         return load_h5(
             fpath=scanfid,
             clip_flyscan=clip_flyscan,
@@ -261,7 +263,9 @@ class S2Client(Client):
     def load_XEOL(self, scan_number=None):
         if scan_number is None:
             scan_number = self.most_recent_completed_scan
-        scanfid = os.path.join(self.xeoldir, f"{self.basename}_{scan_number:04d}.h5")
+        scanfid = os.path.join(
+            get_experiment_dir(), "XEOL", f"2idd_{scan_number:04d}.h5"
+        )
         return load_xeol(fpath=scanfid)
 
 
@@ -290,9 +294,10 @@ class S2Server(Server):
         func(d)
 
     def _send_savedir(self, d):
-        rootdir = PVS["filesys"].val
-        subdir = PVS["subdir"].val
-        basename = PVS["basename"].val
+        rootdir = PVS["filesys"].value
+        subdir = PVS["subdir"].value
+        # basename = PVS["basename"].value
+        basename = "2idd"
         self.send_message(
             json.dumps({"rootdir": rootdir, "subdir": subdir, "basename": basename})
         )

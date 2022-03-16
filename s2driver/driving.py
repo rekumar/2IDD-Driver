@@ -442,7 +442,7 @@ def scan1d_xeol(
     xeol_output_filepath = os.path.join(
         get_experiment_dir(),
         "XEOL",
-        f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
+        f'2idd_{PVS["next_scan"].value:04d}_XEOL.h5',
     )
     xeol_thread = xeol_controller.prime_for_scan(
         scantype="scan1d", output_filepath=xeol_output_filepath
@@ -552,7 +552,7 @@ def scan2d_xeol(
     xeol_output_filepath = os.path.join(
         get_experiment_dir(),
         "XEOL",
-        f'{PVS["basename"].value}_{PVS["next_scan"].value:04d}_XEOL.h5',
+        f'2idd_{PVS["next_scan"].value:04d}_XEOL.h5',
     )
     xeol_thread = xeol_controller.prime_for_scan(
         scantype="scan2d", output_filepath=xeol_output_filepath
@@ -670,7 +670,7 @@ def timeseries_xeol(numpts: int, dwelltime: float):
     xeol_output_filepath = os.path.join(
         get_experiment_dir(),
         "XEOL",
-        f'{PVS["basename"].val}_{PVS["scan_number"].val:04d}_XEOL.h5',
+        f'2idd_{PVS["next_scan"].value:04d}_XEOL.h5',
     )
     xeol_thread = xeol_controller.prime_for_scan(
         scantype="timeseries", output_filepath=xeol_output_filepath
