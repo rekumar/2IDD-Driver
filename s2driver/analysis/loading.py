@@ -4,6 +4,7 @@ from s2driver.logging import get_experiment_dir
 from s2driver.driving import PVS
 import os
 
+
 def load_h5(scan_number, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us_ic"):
     """
     Loads a MAPS-generated .h5 file (raw + fitted data from 2IDD, fitted from 26IDC)
@@ -18,7 +19,7 @@ def load_h5(scan_number, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us
     fpath = os.path.join(
         get_experiment_dir(),
         "img.dat",
-        f'2idd_{scan_number:04d}.h5',
+        f"2idd_{scan_number:04d}.h5",
     )
     quant_scaler_key = {
         "sr_current": 0,  # storage ring current
@@ -103,7 +104,7 @@ def load_xeol(scan_number):
     fpath = os.path.join(
         get_experiment_dir(),
         "XEOL",
-        f'2idd_{scan_number:04d}_XEOL.h5',
+        f"2idd_{scan_number:04d}_XEOL.h5",
     )
     output = {}
     with h5py.File(fpath, "r") as dat:
