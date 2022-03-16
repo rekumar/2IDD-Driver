@@ -5,8 +5,13 @@ import os
 import functools
 from tqdm import tqdm
 from s2driver.logging import initialize_logbook, get_experiment_dir
-
+from s2driver.filters import (
+    TRANSMITTANCE_TO_FILTERS,
+    AVAILABLE_TRANSMITTANCES,
+    find_nearest_transmittance,
+)
 from s2driver.xeol.xeol import XEOLController
+import numpy as np
 
 logger = initialize_logbook()
 
@@ -59,7 +64,7 @@ PV_KEY = {
 PVS = {k: epics.PV(v) for k, v in PV_KEY.items()}
 
 ### Motors
-samx = epics.Motor("2idd:m40")  # example: '26idcnpi:m10.'
+samx = epics.Motor("2idd:m40")
 samy = epics.Motor("2idd:m39")
 samz = epics.Motor("2idd:m36")
 # fomx = epics.Motor()
@@ -93,17 +98,9 @@ CANCEL_PVS = {
     sc2: epics.PV("2idd:AbortScans.PROC"),
     fly1: epics.PV("2idd:FAbortScans.PROC"),
 }
-# for attribute in ["T1PV", "T2PV", "T3PV", "T4PV", "NPTS"]: #TODO not sure what this is, got it from 26idc code -- maybe unnecessary at 2idd?
-#     setattr(sc1, attribute, epics.caget(SCAN_RECORD + ":scan1." + attribute))
-#     setattr(sc2, attribute, epics.caget(SCAN_RECORD + ":scan2." + attribute))
 
 ### XEOL
 xeol_controller = XEOLController()
-# xeol_controller = 0
-
-### Filters
-_FILTER_TRANSMITTANCES = [0.1, 0.2, 0.3, 0.4]
-#for 
 
 ### Single-Action Commands
 def _check_for_huge_movement(motor: epics.Motor, target_position: float):
@@ -211,6 +208,31 @@ def remove_all_filters():
     """Move all filters out of the beam path"""
     for i in [1, 2, 3, 4]:
         remove_filter(i)
+
+
+def set_transmittance(transmittance: float, find_nearest: bool = False):
+    """Sets filters to achieve a target transmittance
+
+    Args:
+        transmittance (float): desired transmittance (0-1)
+        find_nearest (bool, optional): If True, will set filters to get as close as possible to target transmittance. Defaults to False.
+
+    Raises:
+        ValueError: The desired transmittance cannot be achieved with current filter set.
+    """
+    if find_nearest:
+        transmittance = find_nearest_transmittance(transmittance=transmittance)
+        print("Using nearest transmittance: ", transmittance)
+    if transmittance not in AVAILABLE_TRANSMITTANCES:
+        raise ValueError(
+            "Transmittance must be one of the following: %s\n Or, set 'find_nearest=True' to go to the closest setting"
+            % AVAILABLE_TRANSMITTANCES
+        )
+    for filter_index in [1, 2, 3, 4]:
+        if filter_index in TRANSMITTANCE_TO_FILTERS[transmittance]:
+            insert_filter(filter_index)
+        else:
+            remove_filter(filter_index)
 
 
 def get_next_scan_number() -> int:

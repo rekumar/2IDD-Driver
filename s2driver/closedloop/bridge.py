@@ -228,11 +228,23 @@ class S2Client(Client):
         if block:
             self._wait_for_scan_complete()
 
+    def set_transmittance(self, transmittance: float, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "set_transmittance",
+                    "transmittance": transmittance,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
     ### Methods to process data
-    def load_scan(
+    def load_h5(
         self,
         scan_number=None,
-        clip_flyscan=False,
+        clip_flyscan=True,
         xbic_on_dsic=False,
         quant_scaler="us_ic",
     ):
@@ -268,6 +280,7 @@ class S2Server(Server):
             "flyscan2d": self._flyscan2d,
             "timeseries": self._timeseries,
             "timeseries_xeol": self._timeseries_xeol,
+            "set_transmittance": self._set_transmittance,
             # "get_experiment_directory": self.share_experiment_directory,
         }
 
@@ -389,4 +402,8 @@ class S2Server(Server):
 
     def _timeseries_xeol(self, d):
         timeseries_xeol(numpts=d["numpts"], dwelltime=d["dwelltime"])
+        self._mark_scan_complete()
+
+    def _set_transmittance(self, d):
+        set_transmittance(d["transmittance"])
         self._mark_scan_complete()

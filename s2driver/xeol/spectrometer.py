@@ -8,11 +8,15 @@ import sys
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import time
-
+import warnings
 
 sys.path.append(os.path.dirname(__file__))
-import stellarnet_driver3 as sn  # usb driver
-
+try:
+    import stellarnet_driver3 as sn  # usb driver
+    STELLARNET_AVAILABLE = True
+except:
+    warnings.warn("stellarnet_driver3 not available, XEOL will not be available")
+    STELLARNET_AVAILABLE = False
 # you cant import stellarnet unless you are in the right directory regardless of env
 
 
