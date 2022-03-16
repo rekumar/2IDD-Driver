@@ -46,11 +46,53 @@ class S2Client(Client):
             time.sleep(1)
 
     # scan methods
+    def movr_x(self, pos, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "movr_x",
+                    "pos": pos,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def movr_y(self, pos, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "movr_y",
+                    "pos": pos,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
     def scan1d_x(self, startpos, endpos, numpts, dwelltime, absolute=False, block=True):
         self.send(
             json.dumps(
                 {
                     "type": "scan1d_x",
+                    "startpos": startpos,
+                    "endpos": endpos,
+                    "numpts": numpts,
+                    "dwelltime": dwelltime,
+                    "absolute": absolute,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def scan1d_x_xeol(
+        self, startpos, endpos, numpts, dwelltime, absolute=False, block=True
+    ):
+        self.send(
+            json.dumps(
+                {
+                    "type": "scan1d_x_xeol",
                     "startpos": startpos,
                     "endpos": endpos,
                     "numpts": numpts,
@@ -71,14 +113,34 @@ class S2Client(Client):
                     "endpos": endpos,
                     "numpts": numpts,
                     "dwelltime": dwelltime,
-                    "absolute": absolute
+                    "absolute": absolute,
                 }
             )
         )
         if block:
             self._wait_for_scan_complete()
 
-    def scan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True):
+    def scan1d_y_xeol(
+        self, startpos, endpos, numpts, dwelltime, absolute=False, block=True
+    ):
+        self.send(
+            json.dumps(
+                {
+                    "type": "scan1d_y_xeol",
+                    "startpos": startpos,
+                    "endpos": endpos,
+                    "numpts": numpts,
+                    "dwelltime": dwelltime,
+                    "absolute": absolute,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def scan2d(
+        self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True
+    ):
         self.send(
             json.dumps(
                 {
@@ -97,7 +159,9 @@ class S2Client(Client):
         if block:
             self._wait_for_scan_complete()
 
-    def scan2d_xeol(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True):
+    def scan2d_xeol(
+        self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True
+    ):
         self.send(
             json.dumps(
                 {
@@ -116,7 +180,9 @@ class S2Client(Client):
         if block:
             self._wait_for_scan_complete()
 
-    def flyscan2d(self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True):
+    def flyscan2d(
+        self, xmin, xmax, numx, ymin, ymax, numy, dwelltime, absolute=False, block=True
+    ):
         self.send(
             json.dumps(
                 {
@@ -141,6 +207,19 @@ class S2Client(Client):
             json.dumps(
                 {
                     "type": "timeseries",
+                    "numpts": numpts,
+                    "dwelltime": dwelltime,
+                }
+            )
+        )
+        if block:
+            self._wait_for_scan_complete()
+
+    def timeseries_xeol(self, numpts, dwelltime, block=True):
+        self.send(
+            json.dumps(
+                {
+                    "type": "timeseries_xeol",
                     "numpts": numpts,
                     "dwelltime": dwelltime,
                 }
@@ -178,12 +257,17 @@ class S2Server(Server):
     def _process_message(self, message: str):
         options = {
             "request_savedir": self._send_savedir,
+            "movr_x": self._movr_x,
+            "movr_y": self._movr_y,
             "scan1d_x": self._scan1d_x,
+            "scan1d_x_xeol": self._scan1d_x_xeol,
             "scan1d_y": self._scan1d_y,
+            "scan1d_y_xeol": self._scan1d_y_xeol,
             "scan2d": self._scan2d,
             "scan2d_xeol": self._scan2d_xeol,
             "flyscan2d": self._flyscan2d,
             "timeseries": self._timeseries,
+            "timeseries_xeol": self._timeseries_xeol,
             # "get_experiment_directory": self.share_experiment_directory,
         }
 
@@ -201,11 +285,16 @@ class S2Server(Server):
         )
 
     def _mark_scan_complete(self):
-        msg = {
-            "type": "scan_complete",
-            "scan_number": PVS["next_scan"].value-1
-        }
+        msg = {"type": "scan_complete", "scan_number": PVS["next_scan"].value - 1}
         self.send(json.dumps(msg))
+
+    def _movr_x(self, d):
+        movr(samx, d["pos"])
+        self._mark_scan_complete()
+
+    def _movr_y(self, d):
+        movr(samy, d["pos"])
+        self._mark_scan_complete()
 
     def _scan1d_x(self, d):
         scan1d(
@@ -218,8 +307,30 @@ class S2Server(Server):
         )
         self._mark_scan_complete()
 
+    def _scan1d_x_xeol(self, d):
+        scan1d_xeol(
+            motor=samx,
+            startpos=d["startpos"],
+            endpos=d["endpos"],
+            numpts=d["numpts"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
     def _scan1d_y(self, d):
         scan1d(
+            motor=samy,
+            startpos=d["startpos"],
+            endpos=d["endpos"],
+            numpts=d["numpts"],
+            dwelltime=d["dwelltime"],
+            absolute=d["absolute"],
+        )
+        self._mark_scan_complete()
+
+    def _scan1d_y_xeol(self, d):
+        scan1d_xeol(
             motor=samy,
             startpos=d["startpos"],
             endpos=d["endpos"],
@@ -274,4 +385,8 @@ class S2Server(Server):
 
     def _timeseries(self, d):
         timeseries(numpts=d["numpts"], dwelltime=d["dwelltime"])
+        self._mark_scan_complete()
+
+    def _timeseries_xeol(self, d):
+        timeseries_xeol(numpts=d["numpts"], dwelltime=d["dwelltime"])
         self._mark_scan_complete()
