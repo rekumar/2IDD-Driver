@@ -6,6 +6,7 @@ import functools
 from tqdm import tqdm
 from s2driver.logging import initialize_logbook, get_experiment_dir
 from s2driver.filters import (
+	FILTER_INDICES,
     TRANSMITTANCE_TO_FILTERS,
     AVAILABLE_TRANSMITTANCES,
     find_nearest_transmittance,
@@ -183,8 +184,8 @@ def insert_filter(index: int):
     Raises:
         ValueError: Invalid filter index
     """
-    if index not in [1, 2, 3, 4]:
-        raise ValueError("Filter index must be 1, 2, 3, or 4!")
+    if index not in FILTER_INDICES:
+        raise ValueError(f"Filter index must be in {FILTER_INDICES}!")
     epics.caput("2idd:s1:sendCommand", f"I{index}", wait=True)
     logger.debug("Filter %i moved in to beam path.", index)
 
@@ -198,15 +199,15 @@ def remove_filter(index: int):
     Raises:
         ValueError: Invalid filter index
     """
-    if index not in [1, 2, 3, 4]:
-        raise ValueError("Filter index must be 1, 2, 3, or 4!")
+    if index not in FILTER_INDICES:
+        raise ValueError(f"Filter index must be in {FILTER_INDICES}!")
     epics.caput("2idd:s1:sendCommand", f"R{index}", wait=True)
     logger.debug("Filter %i moved out of beam path.", index)
 
 
 def remove_all_filters():
     """Move all filters out of the beam path"""
-    for i in [1, 2, 3, 4]:
+    for i in FILTER_INDICES:
         remove_filter(i)
 
 
@@ -228,7 +229,7 @@ def set_transmittance(transmittance: float, find_nearest: bool = False):
             "Transmittance must be one of the following: %s\n Or, set 'find_nearest=True' to go to the closest setting"
             % AVAILABLE_TRANSMITTANCES
         )
-    for filter_index in [1, 2, 3, 4]:
+    for filter_index in FILTER_INDICES:
         if filter_index in TRANSMITTANCE_TO_FILTERS[transmittance]:
             insert_filter(filter_index)
         else:
@@ -256,6 +257,7 @@ def prescan(*args, **kwargs) -> bool:
 
 
 def postscan(*args, **kwargs):
+    sc1.AWCT = 0 #no more auto wait - this is set to 1 for XEOL.
     return True
 
 
@@ -265,9 +267,7 @@ def scan_moderator(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         if prescan(*args, **kwargs):
-            open_shutter()  # remove the shutter
             result = func(*args, **kwargs)
-            close_shutter()  # replace the shutter
             return postscan(result, *args, **kwargs)
         else:
             logger.debug("Failed prescan check")
@@ -347,6 +347,7 @@ def _execute_scan(scanner: epics.devices.Scan, scantype: str):
     """
     npts = scanner.NPTS
     scannum = get_next_scan_number()
+    open_shutter()
     try:
         scanner.execute = 1  # start the scan
         logger.info("Started %s %i", scantype, scannum)
@@ -367,6 +368,7 @@ def _execute_scan(scanner: epics.devices.Scan, scantype: str):
         if cancel is not None:
             cancel.put(1)
         logger.info(f"Scan {scannum} canceled using ctrl-c!")
+    close_shutter()
 
 
 @scan_moderator

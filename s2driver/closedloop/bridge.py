@@ -13,6 +13,7 @@ logger = initialize_logbook()
 class S2Client(Client):
     def __init__(self):
         self.scan_in_progress = False
+        self.most_recent_completed_scan = PVS["next_scan"].value-1
         super().__init__()
 
     def _process_message(self, message: str):
@@ -245,28 +246,23 @@ class S2Client(Client):
         self,
         scan_number=None,
         clip_flyscan=True,
-        xbic_on_dsic=False,
+        xbic_on_dsic=True,
         quant_scaler="us_ic",
     ):
         if scan_number is None:
             scan_number = self.most_recent_completed_scan
-        scanfid = os.path.join(
-            get_experiment_dir(), "img.dat", f"2idd_{scan_number:04d}.h5"
-        )
+        
         return load_h5(
-            fpath=scanfid,
+            scan_number=scan_number,
             clip_flyscan=clip_flyscan,
             xbic_on_dsic=xbic_on_dsic,
             quant_scaler=quant_scaler,
         )
 
-    def load_XEOL(self, scan_number=None):
+    def load_xeol(self, scan_number=None, wlmin=None, wlmax=None):
         if scan_number is None:
             scan_number = self.most_recent_completed_scan
-        scanfid = os.path.join(
-            get_experiment_dir(), "XEOL", f"2idd_{scan_number:04d}.h5"
-        )
-        return load_xeol(fpath=scanfid)
+        return load_xeol(scan_number, wlmin, wlmax)
 
 
 class S2Server(Server):

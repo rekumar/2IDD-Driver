@@ -89,18 +89,16 @@ def load_h5(scan_number, clip_flyscan=True, xbic_on_dsic=False, quant_scaler="us
             output["fitted"] = False
 
         allchan = dat["MAPS"]["channel_names"][()].astype("U13").tolist()
+        
+        output["maps"] = {}
+        for channel, xrf_ in zip(allchan, xrf):
+            output["maps"][channel] = np.array(xrf_)
         if xbic_on_dsic:
-            xrf.append(
-                dat["MAPS"]["scalers"][scaler_names.index("ds_ic")][:, xmask]
-            )  # append DSIC to channels, used for xbic
-            allchan.append("XBIC")  # label for DSIC
-    output["maps"] = {}
-    for channel, xrf_ in zip(allchan, xrf):
-        output["maps"][channel] = np.array(xrf_)
+            output["maps"]["xbic"] = dat["MAPS"]["scalers"][scaler_names.index("ds_ic")][:, xmask]
     return output
 
 
-def load_xeol(scan_number):
+def load_xeol(scan_number, wlmin=None, wlmax=None):
     fpath = os.path.join(
         get_experiment_dir(),
         "XEOL",
@@ -112,19 +110,45 @@ def load_xeol(scan_number):
         bg = dat["background"][()]
         counts_raw = dat["spectra"][()]
         dwelltime = dat["dwelltime"][()]
+        
 
-    cps = (counts_raw - bg) / dwelltime  # counts per second
-    peak_cps_per_pixel = cps.max(axis=2)
-    peak_wl_per_pixel = wl[cps.argmax(axis=2)]
+        if wlmin is None:
+            wlmin = wl[0]
+        if wlmax is None:
+            wlmax = wl[-1]
 
+        roi = slice(
+            np.argmin(np.abs(wl-wlmin)),
+            np.argmin(np.abs(wl-wlmax))
+        )
+
+        if len(counts_raw.shape) == 2: #1d scan
+            cps = (counts_raw - bg) / dwelltime[:,np.newaxis]  # counts per second
+            peak_cps_per_pixel = cps[:,roi].max(axis=1)
+            peak_wl_per_pixel = wl[roi][cps[:,roi].argmax(axis=1)]
+            avg = cps.mean(axis=0)
+            pos = {'p1': dat["x"][()]}
+        else:
+            cps = (counts_raw - bg) / dwelltime[:,:,np.newaxis]  # counts per second
+            peak_cps_per_pixel = cps[:,:,roi].max(axis=2)
+            peak_wl_per_pixel = wl[roi][cps[:,:,roi].argmax(axis=2)]
+            avg = cps.mean(axis=(0,1))
+            pos = {'p1': dat["x"][()], 'p2': dat["y"][()]}
+    
     output = {
         "wavelength": wl,
         "background_counts": bg,
         "raw_counts": counts_raw,
         "dwelltime": dwelltime,
         "cps": cps,
+        "map_avg_cps": avg,
         "peak_cps_per_pixel": peak_cps_per_pixel,
         "peak_wl_per_pixel": peak_wl_per_pixel,
+        "fitting_params": {
+            "wlmin": wlmin,
+            "wlmax": wlmax
+        },
+        "positions": pos
     }
 
     return output

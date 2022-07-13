@@ -23,7 +23,7 @@ class XEOLController:
             self.IS_PRESENT = True
         except:
             self.IS_PRESENT = False
-        self.DWELLTIME_RATIO = 0.9  # fraction of XRF collection dwelltime to use to acquire spectra. Should be <1 to avoid missing the transition from point to point while XRF scan is ongoing
+        self.DWELLTIME_RATIO = 0.98  # fraction of XRF collection dwelltime to use to acquire spectra. Should be <1 to avoid missing the transition from point to point while XRF scan is ongoing
 
         self.XEOL_IMPLEMENTED_SCANTYPES = {
             "scan1d": self._capture_alongside_scan1d,
@@ -44,6 +44,7 @@ class XEOLController:
         if scantype not in self.XEOL_IMPLEMENTED_SCANTYPES:
             raise ValueError(f"Invalid scan type - XEOL is only implemented for {XEOL_IMPLEMENTATED_SCANTYPES.keys()}")
         capture_function = self.XEOL_IMPLEMENTED_SCANTYPES[scantype] #get the capture thread appropriate to this scan type
+        sc1.AWCT = 1 #set to wait for one trigger per pixel        
 
         stepscan_dwelltime = epics.caget(
             "2iddXMAP:PresetReal"
@@ -52,7 +53,7 @@ class XEOLController:
             stepscan_dwelltime * self.DWELLTIME_RATIO
         )  # spectrometer takes dwelltime in ms
 
-        self.spectrometer.numscans = 5  # average 5 scans together for background
+        self.spectrometer.numscans = 10  # average 10 scans together for background
         bg_wl, bg_cts, bg_tot_time = self.spectrometer.capture_raw()
         self.spectrometer.numscans = 1  # back to 1 scan per capture
         
@@ -84,17 +85,17 @@ class XEOLController:
 
         for y_point in range(numy):
             for x_point in range(numx):
+                while sc1.WCNT == 0: #while we havent gotten to the next point
+                    pass
                 wl, cts, tot_time = self.spectrometer.capture_raw()
                 time_data[y_point, x_point] = tot_time
                 data[y_point, x_point] = cts
                 x_coords[y_point, x_point] = epics.caget(sc1.P1PV)
                 y_coords[y_point, x_point] = epics.caget(sc2.P1PV)
-
-                while self.__xrf_detector_is_acquiring():
-                    time.sleep(
-                        1e-6
-                    )  # wait for xrf detector to stop acquiring data, move on to next point
-
+                sc1.WAIT = 0 #decrement the wait count. setting = 1 increments instead
+                while sc1.WCNT == 1: #while wait count has not registered the change yet
+                    pass
+                
         data_dict = {
             "wavelength": wl,
             "dwelltime": time_data,
@@ -118,7 +119,7 @@ class XEOLController:
         while sc1.BUSY == 0:
             time.sleep(5e-3)
             # print('waiting for trigger...')
-
+        
         tqdm.write("XEOL collection started!")
 
         data = np.zeros([numpts, numwl])
@@ -126,15 +127,17 @@ class XEOLController:
         coords = np.zeros(numpts)
 
         for point in range(numpts):
+            while sc1.WCNT == 0: #while we havent gotten to the next point
+                pass
+			
+            tqdm.write("XEOL Scan triggered")
             wl, cts, tot_time = self.spectrometer.capture_raw()
             time_data[point] = tot_time
             data[point] = cts
             coords[point] = epics.caget(sc1.P1PV)
-
-            while self.__xrf_detector_is_acquiring():
-                time.sleep(
-                    1e-6
-                )  # wait for xrf detector to stop acquiring data, move on to next point
+            sc1.WAIT = 0 #decrement the wait count. setting = 1 increments instead
+            while sc1.WCNT == 1: #while wait count has not registered the change yet
+                pass
 
         data_dict = {
             "wavelength": wl,

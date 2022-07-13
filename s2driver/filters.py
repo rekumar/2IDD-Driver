@@ -3,11 +3,12 @@ import numpy as np
 
 ### Filters
 
+FILTER_INDICES = [1,2,4] #available filters
 FILTER_TRANSMITTANCES = [
-    0.1,
-    0.2,
-    0.3,
-    0.4,
+    0.5,
+    0.28,
+    #0.3,
+    0.08,
 ]  # transmittance (0-1) for each filter (1,2,3,4)
 
 TRANSMITTANCE_TO_FILTERS = (
@@ -22,7 +23,7 @@ for num_filters in range(len(FILTER_TRANSMITTANCES) + 1):
             this_transmittance *= FILTER_TRANSMITTANCES[fi]
         this_transmittance = round(this_transmittance, 12)  # rounding errors
         TRANSMITTANCE_TO_FILTERS[this_transmittance] = [
-            fi + 1 for fi in filter_indices
+            FILTER_INDICES[fi] for fi in filter_indices
         ]  # start from 1, not 0
 
 AVAILABLE_TRANSMITTANCES = sorted(list(TRANSMITTANCE_TO_FILTERS.keys()))
